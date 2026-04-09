@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1775626698660,
+      "tag": "0000_simple_timeslip",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1775626828284,
+      "tag": "0001_marvelous_gideon",
+      "breakpoints": true
+    }
+  ]
+}
