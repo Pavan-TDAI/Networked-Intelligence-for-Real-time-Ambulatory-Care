@@ -1,0 +1,112 @@
+version: "3.8"
+
+services:
+  # PostgreSQL 15 - Primary storage
+  postgres:
+    image: postgres:15
+    container_name: nira-postgres
+    environment:
+      POSTGRES_DB: nira_emr
+      POSTGRES_USER: nira
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nira_secret_2024}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nira"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # HAPI FHIR R4 Server
+  hapi-fhir:
+    image: hapiproject/hapi:latest
+    container_name: nira-hapi-fhir
+    environment:
+      spring.datasource.url: jdbc:postgresql://postgres:5432/nira_emr
+      spring.datasource.username: nira
+      spring.datasource.password: ${POSTGRES_PASSWORD:-nira_secret_2024}
+      spring.datasource.driverClassName: org.postgresql.Driver
+      spring.jpa.properties.hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgres94Dialect
+      hapi.fhir.fhir_version: R4
+      hapi.fhir.cors.allow_Credentials: "true"
+      hapi.fhir.cors.allowed_origin: "*"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Redis for realtime pub/sub and queue
+  redis:
+    image: redis:7-alpine
+    container_name: nira-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # OpenMRS / Bahmni for OPD queue
+  openmrs:
+    image: openmrs/openmrs-core:latest
+    container_name: nira-openmrs
+    environment:
+      OMRS_DB_HOSTNAME: postgres
+      OMRS_DB_PORT: 5432
+      OMRS_DB_NAME: openmrs
+      OMRS_DB_USERNAME: nira
+      OMRS_DB_PASSWORD: ${POSTGRES_PASSWORD:-nira_secret_2024}
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Universal Converter Agent (Node.js)
+  converter-agent:
+    build:
+      context: ./converter-agent
+      dockerfile: Dockerfile
+    container_name: nira-converter-agent
+    environment:
+      DATABASE_URL: postgresql://nira:${POSTGRES_PASSWORD:-nira_secret_2024}@postgres:5432/nira_emr
+      HAPI_FHIR_URL: http://hapi-fhir:8080/fhir
+      REDIS_URL: redis://redis:6379
+      OPENMRS_URL: http://openmrs:8080/openmrs
+      NODE_ENV: production
+    ports:
+      - "3001:3001"
+    depends_on:
+      - hapi-fhir
+      - redis
+      - postgres
+
+  # Patient Portal (React)
+  patient-portal:
+    build:
+      context: ./patient-portal
+      dockerfile: Dockerfile
+    container_name: nira-patient-portal
+    ports:
+      - "3002:80"
+    depends_on:
+      - converter-agent
+
+  # Doctor Portal (React)
+  doctor-portal:
+    build:
+      context: ./doctor-portal
+      dockerfile: Dockerfile
+    container_name: nira-doctor-portal
+    ports:
+      - "3003:80"
+    depends_on:
+      - converter-agent
+
+volumes:
+  pg_data:
