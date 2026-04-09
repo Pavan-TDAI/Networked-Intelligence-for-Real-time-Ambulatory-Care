@@ -110,7 +110,7 @@ export function SignupPage() {
           <CardHeader
             eyebrow="Signup"
             title={copy.title}
-            description="Only a few fields are truly needed for this frontend demo. Everything else can be added or edited later from the profile page."
+            description="Only a few fields are required to get started. Everything else can be added later from your profile."
           />
           <form className="grid gap-5" onSubmit={handleSubmit}>
             <div className="grid gap-4 md:grid-cols-2">

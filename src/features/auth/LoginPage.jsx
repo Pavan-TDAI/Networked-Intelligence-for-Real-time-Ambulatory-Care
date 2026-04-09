@@ -16,6 +16,10 @@ const roleCopy = {
     title: "Doctor login",
     description: "Sign in to review the queue, manage availability, and continue chart validation."
   },
+  nurse: {
+    title: "Nurse login",
+    description: "Sign in to record vitals, assist doctors, and coordinate patient care."
+  },
   admin: {
     title: "Admin login",
     description: "Sign in to manage doctors, schedules, appointments, and clinic operations."

@@ -94,7 +94,7 @@ export function ProfilePage() {
         <CardHeader
           eyebrow="Editable profile"
           title={profile.fullName}
-          description="You can update these details after signup without leaving the frontend demo flow."
+          description="Update your details anytime from this page."
         />
         <form className="grid gap-5" onSubmit={handleSubmit}>
           <div className="grid gap-4 md:grid-cols-2">

@@ -15,28 +15,53 @@ export default {
           sky: "var(--brand-sky)",
           mint: "var(--brand-mint)",
           amber: "var(--brand-amber)",
-          coral: "var(--brand-coral)"
+          coral: "var(--brand-coral)",
+          accent: "var(--brand-accent)"
         }
       },
       fontFamily: {
         sans: ["Manrope", "Noto Sans Devanagari", "Segoe UI", "sans-serif"],
-        display: ["Manrope", "Noto Sans Devanagari", "Segoe UI", "sans-serif"]
+        display: ["Manrope", "Noto Sans Devanagari", "Segoe UI", "sans-serif"],
+        mono: ["JetBrains Mono", "Fira Code", "monospace"]
       },
       boxShadow: {
-        panel: "0 24px 80px rgba(12, 38, 54, 0.16)",
-        soft: "0 10px 30px rgba(12, 38, 54, 0.08)"
+        panel: "0 0 0 1px rgba(0,0,0,0.03), 0 20px 60px -12px rgba(41,53,93,0.1)",
+        soft: "0 2px 8px rgba(41,53,93,0.06)",
+        md: "0 4px 16px rgba(41,53,93,0.08)",
+        glow: "0 0 20px rgba(0,170,174,0.15)",
+        "glow-lg": "0 0 40px rgba(230,50,40,0.12)"
       },
       backgroundImage: {
         "hero-glow":
-          "radial-gradient(circle at top left, rgba(82, 191, 196, 0.24), transparent 42%), radial-gradient(circle at bottom right, rgba(245, 193, 104, 0.18), transparent 32%)"
+          "radial-gradient(circle at 0% 0%, rgba(0,170,174,0.06), transparent 50%), radial-gradient(circle at 100% 100%, rgba(230,50,40,0.04), transparent 50%)"
+      },
+      borderRadius: {
+        "2xl": "16px",
+        "3xl": "20px",
+        "4xl": "24px"
       },
       animation: {
-        float: "float 7s ease-in-out infinite"
+        float: "float 7s ease-in-out infinite",
+        "fade-in": "fadeIn 0.5s ease-out",
+        "slide-up": "slideUp 0.4s ease-out",
+        "pulse-soft": "pulseSoft 3s ease-in-out infinite"
       },
       keyframes: {
         float: {
           "0%, 100%": { transform: "translateY(0px)" },
           "50%": { transform: "translateY(-8px)" }
+        },
+        fadeIn: {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" }
+        },
+        slideUp: {
+          "0%": { opacity: "0", transform: "translateY(12px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" }
+        },
+        pulseSoft: {
+          "0%, 100%": { opacity: "0.4" },
+          "50%": { opacity: "0.8" }
         }
       }
     }

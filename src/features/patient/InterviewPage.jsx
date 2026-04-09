@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { CheckCircle2, ChevronLeft, ChevronRight, MessageSquareHeart } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, MessageSquareHeart, Mic } from "lucide-react";
 import { AppShell } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card, CardHeader } from "../../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../../components/ui/FormFields";
 import { LanguageToggle } from "../../components/ui/LanguageToggle";
 import { ProgressBar } from "../../components/ui/ProgressBar";
+import { VoiceTranscription } from "../shared/VoiceTranscription";
 import { useDemoData } from "../../app/DemoDataProvider";
 import { getAppointmentBundle } from "../shared/selectors";
 import { usePatientLanguage } from "./usePatientLanguage";
@@ -183,6 +184,10 @@ export function InterviewPage() {
                         onChange={(event) => updateAnswer("primaryConcern", event.target.value)}
                       />
                     </Field>
+                    <VoiceTranscription
+                      language={language === "hi" ? "hi-IN" : "en-IN"}
+                      onTranscript={(text) => updateAnswer("primaryConcern", text)}
+                    />
                     <div className="flex flex-wrap gap-2">
                       {concernSuggestions[language].map((suggestion) => (
                         <button
@@ -219,9 +224,15 @@ export function InterviewPage() {
                 ) : null}
 
                 {step === 3 ? (
-                  <Field label={copy.associatedSymptoms}>
-                    <Textarea value={answers.associatedSymptoms} onChange={(event) => updateAnswer("associatedSymptoms", event.target.value)} />
-                  </Field>
+                  <div className="space-y-4">
+                    <Field label={copy.associatedSymptoms}>
+                      <Textarea value={answers.associatedSymptoms} onChange={(event) => updateAnswer("associatedSymptoms", event.target.value)} />
+                    </Field>
+                    <VoiceTranscription
+                      language={language === "hi" ? "hi-IN" : "en-IN"}
+                      onTranscript={(text) => updateAnswer("associatedSymptoms", text)}
+                    />
+                  </div>
                 ) : null}
 
                 {step === 4 ? (

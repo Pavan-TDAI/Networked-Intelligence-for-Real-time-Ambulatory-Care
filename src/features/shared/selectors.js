@@ -6,6 +6,7 @@ export const PATIENT_APPOINTMENT_BUCKETS = ["all", "upcoming", "action", "review
 export function getRoleHomePath(role) {
   if (role === "patient") return "/patient";
   if (role === "doctor") return "/doctor";
+  if (role === "nurse") return "/nurse";
   if (role === "admin") return "/admin";
   return "/auth";
 }

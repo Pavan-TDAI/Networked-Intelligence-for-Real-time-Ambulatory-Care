@@ -19,6 +19,8 @@ import { AdminDashboardPage } from "../features/admin/AdminDashboardPage";
 import { AdminDoctorsPage } from "../features/admin/AdminDoctorsPage";
 import { AdminPatientsPage } from "../features/admin/AdminPatientsPage";
 import { AdminAppointmentsPage } from "../features/admin/AdminAppointmentsPage";
+import { AdvancedToolsPage } from "../features/shared/AdvancedToolsPage";
+import { AIChatBox } from "../features/shared/AIChatBox";
 
 export default function App() {
   const { loading } = useDemoData();
@@ -28,6 +30,7 @@ export default function App() {
   }
 
   return (
+    <>
     <Routes>
       <Route path="/" element={<RootRedirect />} />
 
@@ -50,6 +53,7 @@ export default function App() {
           <Route path="/patient/interview/:appointmentId" element={<InterviewPage />} />
           <Route path="/patient/prescriptions" element={<PrescriptionsPage />} />
           <Route path="/patient/prescriptions/:prescriptionId" element={<PrescriptionDetailPage />} />
+          <Route path="/patient/tools" element={<AdvancedToolsPage />} />
           <Route path="/patient/profile" element={<ProfilePage />} />
         </Route>
 
@@ -59,6 +63,7 @@ export default function App() {
             <Route path="/doctor" element={<DoctorDashboardPage />} />
             <Route path="/doctor/availability" element={<DoctorAvailabilityPage />} />
             <Route path="/doctor/patient/:appointmentId" element={<DoctorChartPage />} />
+            <Route path="/doctor/tools" element={<AdvancedToolsPage />} />
           </Route>
         </Route>
 
@@ -67,11 +72,20 @@ export default function App() {
           <Route path="/admin/doctors" element={<AdminDoctorsPage />} />
           <Route path="/admin/patients" element={<AdminPatientsPage />} />
           <Route path="/admin/appointments" element={<AdminAppointmentsPage />} />
+          <Route path="/admin/tools" element={<AdvancedToolsPage />} />
           <Route path="/admin/profile" element={<ProfilePage />} />
+        </Route>
+
+        <Route element={<RoleRoute role="nurse" />}>
+          <Route path="/nurse" element={<DoctorDashboardPage />} />
+          <Route path="/nurse/tools" element={<AdvancedToolsPage />} />
+          <Route path="/nurse/profile" element={<ProfilePage />} />
         </Route>
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    <AIChatBox />
+    </>
   );
 }
