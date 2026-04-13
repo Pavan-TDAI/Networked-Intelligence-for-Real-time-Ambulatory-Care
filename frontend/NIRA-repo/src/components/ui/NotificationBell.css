@@ -1,0 +1,47 @@
+.notification-bell-wrap {
+   isolation: isolate;
+}
+
+.notification-bell-trigger {
+   border: 1px solid color-mix(in srgb, var(--line, #d8dde6) 70%, transparent);
+   background: color-mix(in srgb, var(--surface-1, #fff) 76%, transparent);
+}
+
+.notification-bell-trigger:hover {
+   color: var(--text-primary, #111827);
+   background: color-mix(in srgb, var(--surface-2, #f3f6fb) 86%, transparent);
+   transform: translateY(-1px);
+}
+
+.notification-bell-trigger.is-open {
+   color: var(--text-primary, #111827);
+   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-sky, #67c5ff) 20%, transparent);
+}
+
+.notification-bell-trigger.has-unread::after {
+   content: "";
+   position: absolute;
+   inset: 2px;
+   border-radius: 0.65rem;
+   border: 1px solid color-mix(in srgb, #ef4444 35%, transparent);
+   pointer-events: none;
+}
+
+.notification-bell-count {
+   box-shadow: 0 0 0 2px var(--surface-1, #fff);
+}
+
+.notification-bell-panel {
+   animation: notification-panel-in 0.16s ease-out;
+}
+
+@keyframes notification-panel-in {
+   from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+   }
+   to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+   }
+}
