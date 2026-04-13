@@ -131,6 +131,8 @@ export function SignupPage() {
               </Field>
               <Field label="Email">
                 <Input
+                  required
+                  type="email"
                   value={form.email}
                   onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
                 />

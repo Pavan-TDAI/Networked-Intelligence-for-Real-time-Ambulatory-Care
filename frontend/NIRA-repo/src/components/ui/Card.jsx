@@ -11,9 +11,10 @@ const variantClassMap = {
   gradientElevated: "glass-card glass-card-gradient shadow-elevated"
 };
 
-export function Card({ className, children, density = "balanced", variant = "default" }) {
+export function Card({ className, children, density = "balanced", variant = "default", ...props }) {
   return (
     <div
+      {...props}
       className={cn(
         variantClassMap[variant] || variantClassMap.default,
         densityClassMap[density] || densityClassMap.balanced,

@@ -42,7 +42,13 @@ export function PatientHomePage() {
   } = getPatientWorkspace(state);
   const today = getTodayDayKey();
   const todayAppointments = useMemo(
-    () => appointments.filter((item) => item.startAt?.slice(0, 10) === today && item.bookingStatus !== "cancelled"),
+    () =>
+      appointments.filter(
+        (item) =>
+          item.startAt?.slice(0, 10) === today &&
+          !["cancelled", "completed"].includes(item.bookingStatus) &&
+          item.journeyBucket !== "missed"
+      ),
     [appointments, today]
   );
 
@@ -76,6 +82,7 @@ export function PatientHomePage() {
   const buckets = [
     { key: "upcoming", label: t("upcomingAppts"), count: bucketCounts.upcoming + bucketCounts.action, tone: "neutral" },
     { key: "review", label: "In review", count: bucketCounts.review, tone: "info" },
+    { key: "missed", label: "Missed", count: bucketCounts.missed, tone: "danger" },
     { key: "completed", label: t("completed"), count: bucketCounts.completed, tone: "success" }
   ];
 
@@ -242,7 +249,7 @@ export function PatientHomePage() {
         <Card density="compact" className="animate-fade-in">
           <h3 className="text-xl font-semibold text-ink">Appointment buckets</h3>
           <p className="mt-1 text-sm text-muted">Tap once to jump into the exact stage of care.</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {buckets.map((bucket) => (
               <Link key={bucket.key} to={`/patient/appointments?bucket=${bucket.key}`} className="rounded-2xl border border-line bg-surface-2 p-4 transition hover:-translate-y-0.5 hover:bg-white">
                 <div className="text-sm font-semibold text-ink">{bucket.label}</div>

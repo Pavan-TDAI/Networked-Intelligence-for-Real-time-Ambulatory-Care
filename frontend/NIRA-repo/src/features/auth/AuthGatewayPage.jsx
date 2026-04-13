@@ -103,13 +103,13 @@ export function AuthGatewayPage() {
         <div className="space-y-4 text-center">
           <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
             <Link to="/auth/login/patient" className="underline underline-offset-4">
-              
+              Patient login
             </Link>
             <Link to="/auth/signup/patient" className="underline underline-offset-4">
-              
+              Patient signup
             </Link>
             <Link to="/auth/hospital" className="underline underline-offset-4">
-              
+              Hospital access
             </Link>
           </div>
           <p className="text-xs text-muted/70">

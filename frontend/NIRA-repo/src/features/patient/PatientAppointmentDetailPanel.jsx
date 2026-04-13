@@ -13,6 +13,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card, CardHeader } from "../../components/ui/Card";
 import { formatDate, formatStatus, formatTime } from "../../lib/format";
+import { getPatientReschedulePath } from "../shared/selectors";
 
 function getJourneyTone(bucket) {
   if (bucket === "action") {
@@ -25,6 +26,10 @@ function getJourneyTone(bucket) {
 
   if (bucket === "completed") {
     return "success";
+  }
+
+  if (bucket === "missed") {
+    return "danger";
   }
 
   if (bucket === "cancelled") {
@@ -75,6 +80,7 @@ export function PatientAppointmentDetailPanel({
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [submittingCancel, setSubmittingCancel] = useState(false);
   const timeline = useMemo(() => (appointment ? buildTimeline(appointment) : []), [appointment]);
+  const reschedulePath = appointment ? getPatientReschedulePath(appointment) : "/patient/booking";
 
   useEffect(() => {
     if (appointment?.bookingStatus === "cancelled") {
@@ -136,6 +142,20 @@ export function PatientAppointmentDetailPanel({
         </div>
       ) : null}
 
+      {appointment.journeyBucket === "missed" ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-1 h-5 w-5 text-rose-700" />
+            <div>
+              <div className="text-sm font-semibold text-rose-950">Appointment missed</div>
+              <div className="mt-1 text-sm leading-6 text-rose-900/90">
+                This timeslot has already passed, so it is no longer treated as an upcoming visit. You can pick a fresh slot with the same doctor right away.
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <Card density="compact" variant="gradientElevated">
         <CardHeader
           eyebrow="Visit summary"
@@ -190,6 +210,15 @@ export function PatientAppointmentDetailPanel({
               <Link to="/patient/booking">
                 <CalendarClock className="h-4 w-4" />
                 Book another appointment
+              </Link>
+            </Button>
+          ) : null}
+
+          {appointment.journeyBucket === "missed" ? (
+            <Button asChild variant="accent">
+              <Link to={reschedulePath}>
+                <CalendarClock className="h-4 w-4" />
+                Reschedule with same doctor
               </Link>
             </Button>
           ) : null}
@@ -266,6 +295,10 @@ export function PatientAppointmentDetailPanel({
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-900">
                 This appointment is now read-only history. If you still need care, you can book a fresh slot.
               </div>
+            ) : appointment.journeyBucket === "missed" ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-900">
+                This visit was missed, so the active care flow stopped here. Use the reschedule action above to pick a new slot with the same doctor.
+              </div>
             ) : null}
           </div>
         </Card>
@@ -285,6 +318,8 @@ export function PatientAppointmentDetailPanel({
                 ? "Your chat intake details are already shared. The doctor is now reviewing or validating the information before final approval."
                 : appointment.journeyBucket === "completed"
                   ? "This visit has been completed and the approved prescription is available in your portal."
+                  : appointment.journeyBucket === "missed"
+                    ? "This visit was missed, so it has been moved out of the upcoming queue. Reschedule it with the same doctor to continue care."
                   : appointment.journeyBucket === "cancelled"
                     ? "This visit is cancelled and kept only for history. It will no longer move forward in the workflow."
                     : "Your appointment is booked. If needed, you can still review details or cancel before completion."}

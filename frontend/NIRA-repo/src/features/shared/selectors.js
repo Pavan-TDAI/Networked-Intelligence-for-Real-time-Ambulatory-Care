@@ -1,7 +1,22 @@
 import { addDays, getTodayDayKey } from "../../lib/schedule";
 import { getNextAvailableSlot, getScheduleLabel, listCollection } from "../../services/stateHelpers";
 
-export const PATIENT_APPOINTMENT_BUCKETS = ["all", "upcoming", "action", "review", "completed", "cancelled"];
+export const PATIENT_APPOINTMENT_BUCKETS = ["all", "upcoming", "action", "review", "missed", "completed", "cancelled"];
+
+function buildPatientBookingPath(doctorId, rescheduleAppointmentId = "") {
+  const searchParams = new URLSearchParams();
+
+  if (doctorId) {
+    searchParams.set("doctorId", doctorId);
+  }
+
+  if (rescheduleAppointmentId) {
+    searchParams.set("rescheduleAppointmentId", rescheduleAppointmentId);
+  }
+
+  const query = searchParams.toString();
+  return query ? `/patient/booking?${query}` : "/patient/booking";
+}
 
 export function getRoleHomePath(role) {
   if (role === "patient") return "/patient";
@@ -101,13 +116,55 @@ export function getAppointmentBundle(state, appointmentId) {
   };
 }
 
-function getPatientJourneyBucket(appointment, encounter, prescription) {
+function getAppointmentEndAtMs(appointment, defaultDurationMinutes = 15) {
+  const endAtMs = new Date(appointment?.endAt || "").getTime();
+  if (Number.isFinite(endAtMs)) {
+    return endAtMs;
+  }
+
+  const startAtMs = new Date(appointment?.startAt || "").getTime();
+  if (!Number.isFinite(startAtMs)) {
+    return Number.NaN;
+  }
+
+  const durationMinutes = Number(appointment?.slotDurationMinutes || defaultDurationMinutes);
+  const safeDurationMinutes = Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 15;
+
+  return startAtMs + safeDurationMinutes * 60 * 1000;
+}
+
+function hasAppointmentEnded(appointment, reference = new Date(), defaultDurationMinutes = 15) {
+  const endAtMs = getAppointmentEndAtMs(appointment, defaultDurationMinutes);
+  return Number.isFinite(endAtMs) && endAtMs < reference.getTime();
+}
+
+function isMissedPatientAppointment(appointment, encounter, doctor, reference = new Date()) {
+  if (!appointment || ["completed", "cancelled"].includes(appointment.bookingStatus)) {
+    return false;
+  }
+
+  if (!["scheduled", "rescheduled"].includes(appointment.bookingStatus)) {
+    return false;
+  }
+
+  if (encounter?.status === "approved") {
+    return false;
+  }
+
+  return hasAppointmentEnded(appointment, reference, doctor?.slotDurationMinutes);
+}
+
+function getPatientJourneyBucket(appointment, encounter, prescription, doctor) {
   if (appointment.bookingStatus === "cancelled") {
     return "cancelled";
   }
 
   if (appointment.bookingStatus === "completed" || encounter?.status === "approved" || prescription) {
     return "completed";
+  }
+
+  if (isMissedPatientAppointment(appointment, encounter, doctor)) {
+    return "missed";
   }
 
   if (encounter?.status === "awaiting_interview") {
@@ -128,6 +185,10 @@ function getPatientJourneyLabel(bucket, encounterStatus) {
 
   if (bucket === "completed") {
     return "Prescription approved";
+  }
+
+  if (bucket === "missed") {
+    return "Missed appointment";
   }
 
   if (bucket === "action") {
@@ -210,7 +271,15 @@ function buildPatientNextAction(appointmentItem) {
     return {
       label: "Book another appointment",
       description: "This visit is cancelled. You can book a new slot whenever you are ready.",
-      to: "/patient/booking"
+      to: buildPatientBookingPath(appointmentItem.doctorId)
+    };
+  }
+
+  if (appointmentItem.journeyBucket === "missed") {
+    return {
+      label: "Reschedule appointment",
+      description: "This slot has already passed. Choose a fresh time with the same doctor to continue care without losing track.",
+      to: buildPatientBookingPath(appointmentItem.doctorId, appointmentItem.id)
     };
   }
 
@@ -233,7 +302,7 @@ function buildPatientAppointmentItem(state, appointment) {
   const testOrderCollection = state.testOrders || { allIds: [], byId: {} };
   const testOrder = testOrderCollection.byId[`tests-${appointment.id}`] || null;
   const hasTests = testOrder && ((testOrder.tests?.length || 0) > 0 || String(testOrder.patientNote || "").trim().length > 0);
-  const journeyBucket = getPatientJourneyBucket(appointment, encounter, prescription);
+  const journeyBucket = getPatientJourneyBucket(appointment, encounter, prescription, doctor);
   const interviewStatus = getInterviewStatus(appointment, encounter, precheckQuestionnaire);
 
   const appointmentItem = {
@@ -250,7 +319,9 @@ function buildPatientAppointmentItem(state, appointment) {
     testOrder: hasTests ? testOrder : null,
     journeyBucket,
     journeyLabel: getPatientJourneyLabel(journeyBucket, encounter?.status),
-    canCancel: !["completed", "cancelled"].includes(appointment.bookingStatus),
+    canCancel:
+      !["completed", "cancelled"].includes(appointment.bookingStatus) &&
+      !hasAppointmentEnded(appointment, new Date(), doctor?.slotDurationMinutes),
     canStartInterview: precheckQuestionnaire?.status === "sent_to_patient",
     canViewInterview: precheckQuestionnaire?.status === "completed" || interview?.completionStatus === "complete",
     canViewPrescription: !!prescription,
@@ -272,6 +343,10 @@ export function getPatientAppointmentById(state, appointmentId) {
   return buildPatientAppointmentItem(state, appointment);
 }
 
+export function getPatientReschedulePath(appointment) {
+  return buildPatientBookingPath(appointment?.doctorId, appointment?.id);
+}
+
 export function getPatientWorkspace(state) {
   const patient = getCurrentProfile(state);
   if (!patient) {
@@ -283,6 +358,7 @@ export function getPatientWorkspace(state) {
         upcoming: [],
         action: [],
         review: [],
+        missed: [],
         completed: [],
         cancelled: []
       },
@@ -291,6 +367,7 @@ export function getPatientWorkspace(state) {
         upcoming: 0,
         action: 0,
         review: 0,
+        missed: 0,
         completed: 0,
         cancelled: 0
       },
@@ -319,6 +396,7 @@ export function getPatientWorkspace(state) {
     upcoming: appointments.filter((appointment) => appointment.journeyBucket === "upcoming"),
     action: appointments.filter((appointment) => appointment.journeyBucket === "action"),
     review: appointments.filter((appointment) => appointment.journeyBucket === "review"),
+    missed: appointments.filter((appointment) => appointment.journeyBucket === "missed"),
     completed: appointments.filter((appointment) => appointment.journeyBucket === "completed"),
     cancelled: appointments.filter((appointment) => appointment.journeyBucket === "cancelled")
   };
@@ -328,6 +406,7 @@ export function getPatientWorkspace(state) {
     upcoming: appointmentsByBucket.upcoming.length,
     action: appointmentsByBucket.action.length,
     review: appointmentsByBucket.review.length,
+    missed: appointmentsByBucket.missed.length,
     completed: appointmentsByBucket.completed.length,
     cancelled: appointmentsByBucket.cancelled.length
   };
@@ -336,7 +415,7 @@ export function getPatientWorkspace(state) {
     appointmentsByBucket.upcoming[0] ||
     appointmentsByBucket.action[0] ||
     appointmentsByBucket.review[0] ||
-    appointments.find((appointment) => appointment.bookingStatus !== "cancelled") ||
+    appointmentsByBucket.completed[0] ||
     null;
   const pendingInterview = appointmentsByBucket.action[0] || null;
   const prescriptions = listCollection(state.prescriptions)
@@ -365,6 +444,7 @@ export function getPatientWorkspace(state) {
     appointmentsByBucket.action[0]?.nextAction ||
     appointmentsByBucket.review[0]?.nextAction ||
     appointmentsByBucket.upcoming[0]?.nextAction ||
+    appointmentsByBucket.missed[0]?.nextAction ||
     appointmentsByBucket.completed[0]?.nextAction || {
       label: "Book appointment",
       description: "Choose a doctor and a live slot to start the next visit.",

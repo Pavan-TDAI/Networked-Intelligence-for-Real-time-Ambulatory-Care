@@ -21,11 +21,11 @@ export function AdminDashboardPage() {
     >
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <StatCard label={t("admins")} value={`${counts.admins}`} tone="accent" />
-          <StatCard label={t("doctors")} value={`${counts.doctors}`} tone="accent" />
-          <StatCard label={t("pendingApprovals")} value={`${counts.pendingDoctors}`} tone="soft" />
-          <StatCard label={t("patients")} value={`${counts.patients}`} />
-          <StatCard label={t("appointments")} value={`${counts.appointments}`} />
+          <StatCard label={t("admins")} value={`${counts.admins}`} tone="accent" to="/admin/admins" />
+          <StatCard label={t("doctors")} value={`${counts.doctors}`} tone="accent" to="/admin/doctors" />
+          <StatCard label={t("pendingApprovals")} value={`${counts.pendingDoctors}`} tone="soft" to="/admin/doctors?status=pending_approval" />
+          <StatCard label={t("patients")} value={`${counts.patients}`} to="/admin/patients" />
+          <StatCard label={t("appointments")} value={`${counts.appointments}`} to="/admin/appointments?status=active" />
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">

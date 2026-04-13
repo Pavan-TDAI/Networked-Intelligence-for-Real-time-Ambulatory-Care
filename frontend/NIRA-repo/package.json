@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "mongo:api": "node server/mongo-state-api.mjs",
     "db:init": "node scripts/db-init.mjs",
     "db:seed": "node scripts/db-seed.mjs",
     "db:reset": "node scripts/db-reset.mjs",

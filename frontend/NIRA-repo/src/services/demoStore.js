@@ -15,28 +15,72 @@ import {
   createEncounter,
   createInterview,
   createPrescription,
+  syncSignupToDatabase,
   updateInterview
 } from "./supabaseApi";
+import { fetchMongoState, mongoStateConfigured, persistMongoState } from "./mongoStateApi";
+import { formatDate, formatTime } from "../lib/format";
 import {
   buildOverrideId,
   createWeeklyRules,
   getRoleCollectionKey,
   listCollection,
   normalizePhone,
+  removeEntity,
   syncDoctorDaySchedules,
   upsertEntity
 } from "./stateHelpers";
 import { generatePrecheckQuestions } from "./precheckQuestions";
 
 export const STORAGE_KEY = "nira-demo-state-v2";
+const APPOINTMENT_REMINDER_WINDOW_MS = 2 * 60 * 60 * 1000;
+let mongoStateHydrated = false;
+let mongoPersistQueue = Promise.resolve();
+
+function queueMongoStatePersist(snapshot) {
+  if (!mongoStateConfigured || typeof window === "undefined") {
+    return;
+  }
+
+  mongoPersistQueue = mongoPersistQueue
+    .then(() => persistMongoState(snapshot))
+    .catch((error) => {
+      console.warn("[NIRA] Mongo state persistence skipped.", error);
+    });
+}
+
+async function hydrateStateFromMongo() {
+  if (!mongoStateConfigured || typeof window === "undefined" || mongoStateHydrated) {
+    return;
+  }
+
+  mongoStateHydrated = true;
+
+  try {
+    const remoteState = await fetchMongoState();
+
+    if (!remoteState) {
+      queueMongoStatePersist(readRaw());
+      return;
+    }
+
+    normalizeStateShape(remoteState);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteState));
+  } catch (error) {
+    console.warn("[NIRA] Failed to hydrate state from Mongo.", error);
+  }
+}
 
 function ensureCollection(state, key) {
   if (!state[key] || !Array.isArray(state[key].allIds) || typeof state[key].byId !== "object") {
     state[key] = { allIds: [], byId: {} };
+    return true;
   }
+  return false;
 }
 
 function ensureDefaultNurseAccount(state) {
+  let changed = false;
   ensureCollection(state, "users");
   ensureCollection(state, "nurses");
 
@@ -47,6 +91,7 @@ function ensureDefaultNurseAccount(state) {
         id: existingNurseUser.profileId,
         userId: existingNurseUser.id,
         fullName: "Nurse",
+        profilePhoto: "",
         shift: "day",
         assignedWard: "OPD-A",
         nursingLicenseNumber: "",
@@ -57,8 +102,9 @@ function ensureDefaultNurseAccount(state) {
         emergencyContactPhone: "",
         notes: ""
       });
+      changed = true;
     }
-    return;
+    return changed;
   }
 
   const nurseUserId = "user-nurse-primary";
@@ -80,6 +126,7 @@ function ensureDefaultNurseAccount(state) {
     id: nurseProfileId,
     userId: nurseUserId,
     fullName: "Sister Priya Nair",
+    profilePhoto: "",
     clinic: "NIRA Pilot Clinic",
     department: "General OPD",
     shift: "day",
@@ -92,18 +139,22 @@ function ensureDefaultNurseAccount(state) {
     emergencyContactPhone: "+91 95555 22111",
     notes: "Leads vitals capture, triage prep, and discharge education handoff."
   });
+  changed = true;
+  return changed;
 }
 
 function normalizeStateShape(state) {
-  ensureCollection(state, "nurses");
-  ensureCollection(state, "labReports");
-  ensureCollection(state, "precheckQuestionnaires");
-  ensureCollection(state, "notifications");
-  ensureCollection(state, "testOrders");
-  ensureCollection(state, "emrSync");
-  ensureCollection(state, "dbSync");
-  ensureDefaultNurseAccount(state);
-  return state;
+  let changed = false;
+  changed = ensureCollection(state, "nurses") || changed;
+  changed = ensureCollection(state, "labReports") || changed;
+  changed = ensureCollection(state, "precheckQuestionnaires") || changed;
+  changed = ensureCollection(state, "notifications") || changed;
+  changed = ensureCollection(state, "testOrders") || changed;
+  changed = ensureCollection(state, "emrSync") || changed;
+  changed = ensureCollection(state, "dbSync") || changed;
+  changed = ensureDefaultNurseAccount(state) || changed;
+  changed = syncDerivedNotifications(state) || changed;
+  return changed;
 }
 
 function readRaw() {
@@ -113,12 +164,18 @@ function readRaw() {
 
   const stored = window.localStorage.getItem(STORAGE_KEY);
   if (!stored) {
-    const seed = normalizeStateShape(createSeedState());
+    const seed = createSeedState();
+    normalizeStateShape(seed);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
     return seed;
   }
 
-  return normalizeStateShape(JSON.parse(stored));
+  const parsed = JSON.parse(stored);
+  const changed = normalizeStateShape(parsed);
+  if (changed) {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+  }
+  return parsed;
 }
 
 function writeRaw(nextState) {
@@ -129,10 +186,12 @@ function writeRaw(nextState) {
       lastSyncedAt: new Date().toISOString()
     }
   };
+  normalizeStateShape(payload);
 
   if (typeof window !== "undefined") {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     window.dispatchEvent(new CustomEvent("nira-demo-state-updated"));
+    queueMongoStatePersist(payload);
   }
   return payload;
 }
@@ -220,6 +279,7 @@ function createPatientProfile(user, form) {
     id: user.profileId,
     userId: user.id,
     fullName: form.fullName,
+    profilePhoto: form.profilePhoto || "",
     preferredLanguage: form.preferredLanguage || "en",
     age: form.age ? Number(form.age) : null,
     gender: form.gender || "",
@@ -238,6 +298,7 @@ function createDoctorProfile(user, form, status = "active") {
     id: user.profileId,
     userId: user.id,
     fullName: form.fullName,
+    profilePhoto: form.profilePhoto || "",
     specialty: form.specialty,
     clinic: form.clinic || "NIRA Pilot Clinic",
     licenseNumber: form.licenseNumber,
@@ -256,10 +317,89 @@ function createAdminProfile(user, form) {
     id: user.profileId,
     userId: user.id,
     fullName: form.fullName,
+    profilePhoto: form.profilePhoto || "",
     clinicName: form.clinicName || "NIRA Pilot Clinic",
     phone: form.phone || "",
     email: form.email || ""
   };
+}
+
+function findDuplicateRoleUser(state, role, form, ignoreUserId = null) {
+  const normalizedPhone = normalizePhone(form.phone || "");
+  const normalizedEmail = String(form.email || "").trim().toLowerCase();
+
+  return listCollection(state.users).find((user) => {
+    if (user.role !== role || user.id === ignoreUserId) {
+      return false;
+    }
+
+    const samePhone = normalizedPhone && normalizePhone(user.phone) === normalizedPhone;
+    const sameEmail = normalizedEmail && String(user.email || "").trim().toLowerCase() === normalizedEmail;
+    return samePhone || sameEmail;
+  });
+}
+
+function removeMatchingEntities(collection, predicate) {
+  listCollection(collection)
+    .filter(predicate)
+    .forEach((item) => removeEntity(collection, item.id));
+}
+
+function removePatientCascade(state, patientId) {
+  const patient = state.patients.byId[patientId];
+  if (!patient) {
+    throw new Error("Patient not found.");
+  }
+
+  const patientUserId = patient.userId;
+  const relatedAppointments = listCollection(state.appointments).filter((appointment) => appointment.patientId === patientId);
+  const appointmentIds = new Set(relatedAppointments.map((appointment) => appointment.id));
+  const affectedDoctorIds = relatedAppointments.map((appointment) => appointment.doctorId);
+
+  removeMatchingEntities(state.appointments, (appointment) => appointment.patientId === patientId);
+  removeMatchingEntities(
+    state.encounters,
+    (encounter) => encounter.patientId === patientId || appointmentIds.has(encounter.appointmentId)
+  );
+  removeMatchingEntities(state.interviews, (interview) => appointmentIds.has(interview.appointmentId));
+  removeMatchingEntities(
+    state.prescriptions,
+    (prescription) => prescription.patientId === patientId || appointmentIds.has(prescription.appointmentId)
+  );
+  removeMatchingEntities(
+    state.labReports,
+    (report) => report.patientId === patientId || appointmentIds.has(report.appointmentId)
+  );
+  removeMatchingEntities(
+    state.precheckQuestionnaires,
+    (questionnaire) => questionnaire.patientId === patientId || appointmentIds.has(questionnaire.appointmentId)
+  );
+  removeMatchingEntities(
+    state.notifications,
+    (notification) => notification.userId === patientUserId || appointmentIds.has(notification.appointmentId)
+  );
+  removeMatchingEntities(
+    state.testOrders,
+    (testOrder) => testOrder.patientId === patientId || appointmentIds.has(testOrder.appointmentId)
+  );
+  removeMatchingEntities(state.emrSync, (item) => appointmentIds.has(item.appointmentId));
+  removeMatchingEntities(
+    state.dbSync,
+    (item) => appointmentIds.has(item.appointmentId) || item.patientId === patientId || item.userId === patientUserId
+  );
+
+  removeEntity(state.patients, patientId);
+  removeEntity(state.users, patientUserId);
+
+  if (state.session.userId === patientUserId) {
+    clearSession(state);
+  }
+
+  if (state.ui?.lastViewedAppointmentId && appointmentIds.has(state.ui.lastViewedAppointmentId)) {
+    state.ui.lastViewedAppointmentId = null;
+  }
+
+  syncDoctorAndMaybeOriginal(state, affectedDoctorIds);
 }
 
 function createScheduleTemplate(doctorId, slotDurationMinutes = 15, weeklyRules = createWeeklyRules()) {
@@ -757,6 +897,199 @@ function createDemoNotification({
   };
 }
 
+function createStableNotification({
+  id,
+  userId,
+  type,
+  title,
+  message,
+  encounterId = null,
+  questionnaireId = null,
+  prescriptionId = null,
+  appointmentId = null,
+  testOrderId = null
+}) {
+  return {
+    id,
+    userId,
+    type,
+    title,
+    message,
+    encounterId,
+    questionnaireId,
+    prescriptionId,
+    appointmentId,
+    testOrderId,
+    is_read: false,
+    created_at: new Date().toISOString(),
+    read_at: null
+  };
+}
+
+function upsertNotificationWithHistory(state, notification) {
+  const existing = state.notifications.byId[notification.id];
+  if (!existing) {
+    upsertNotificationEntity(state, notification);
+    return true;
+  }
+
+  const nextNotification = {
+    ...existing,
+    ...notification,
+    created_at: existing.created_at || notification.created_at,
+    is_read: existing.is_read,
+    read_at: existing.read_at
+  };
+
+  const changed =
+    existing.type !== nextNotification.type ||
+    existing.title !== nextNotification.title ||
+    existing.message !== nextNotification.message ||
+    existing.userId !== nextNotification.userId ||
+    existing.encounterId !== nextNotification.encounterId ||
+    existing.questionnaireId !== nextNotification.questionnaireId ||
+    existing.prescriptionId !== nextNotification.prescriptionId ||
+    existing.appointmentId !== nextNotification.appointmentId ||
+    existing.testOrderId !== nextNotification.testOrderId;
+
+  if (changed) {
+    state.notifications.byId[notification.id] = nextNotification;
+  }
+
+  return changed;
+}
+
+function getAppointmentEndAtMs(appointment, defaultDurationMinutes = 15) {
+  const endAtMs = new Date(appointment?.endAt || "").getTime();
+  if (Number.isFinite(endAtMs)) {
+    return endAtMs;
+  }
+
+  const startAtMs = new Date(appointment?.startAt || "").getTime();
+  if (!Number.isFinite(startAtMs)) {
+    return Number.NaN;
+  }
+
+  const durationMinutes = Number(appointment?.slotDurationMinutes || defaultDurationMinutes);
+  const safeDurationMinutes = Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 15;
+
+  return startAtMs + safeDurationMinutes * 60 * 1000;
+}
+
+function isMissedAppointment(appointment, encounter, doctor, reference = new Date()) {
+  if (!appointment || ["completed", "cancelled"].includes(appointment.bookingStatus)) {
+    return false;
+  }
+
+  if (!["scheduled", "rescheduled"].includes(appointment.bookingStatus)) {
+    return false;
+  }
+
+  if (encounter?.status === "approved") {
+    return false;
+  }
+
+  const endAtMs = getAppointmentEndAtMs(appointment, doctor?.slotDurationMinutes);
+  if (!Number.isFinite(endAtMs)) {
+    return false;
+  }
+
+  return endAtMs < reference.getTime();
+}
+
+function syncDerivedNotifications(state, reference = new Date()) {
+  let changed = false;
+  const nowMs = reference.getTime();
+
+  listCollection(state.appointments).forEach((appointment) => {
+    const patient = state.patients.byId[appointment.patientId];
+    const doctor = state.doctors.byId[appointment.doctorId];
+    const encounter = state.encounters.byId[`encounter-${appointment.id}`] || null;
+    const startAtMs = new Date(appointment.startAt).getTime();
+    const isActiveAppointment = !["completed", "cancelled"].includes(appointment.bookingStatus);
+    const inReminderWindow =
+      isActiveAppointment &&
+      Number.isFinite(startAtMs) &&
+      startAtMs >= nowMs &&
+      startAtMs - nowMs <= APPOINTMENT_REMINDER_WINDOW_MS;
+
+    if (inReminderWindow && patient?.userId) {
+      changed =
+        upsertNotificationWithHistory(
+          state,
+          createStableNotification({
+            id: `notification-reminder-patient-${appointment.id}`,
+            userId: patient.userId,
+            type: "appointment_reminder",
+            title: "Appointment coming up soon",
+            message: `Your visit with ${doctor?.fullName || "your doctor"} starts at ${formatTime(appointment.startAt)} on ${formatDate(appointment.startAt)}.`,
+            encounterId: `encounter-${appointment.id}`,
+            appointmentId: appointment.id
+          })
+        ) || changed;
+    }
+
+    if (inReminderWindow && doctor?.userId) {
+      changed =
+        upsertNotificationWithHistory(
+          state,
+          createStableNotification({
+            id: `notification-reminder-doctor-${appointment.id}`,
+            userId: doctor.userId,
+            type: "appointment_reminder",
+            title: "Upcoming slot in under 2 hours",
+            message: `${patient?.fullName || "Patient"} is booked for ${formatTime(appointment.startAt)} on ${formatDate(appointment.startAt)}.`,
+            encounterId: `encounter-${appointment.id}`,
+            appointmentId: appointment.id
+          })
+        ) || changed;
+    }
+
+    if (isMissedAppointment(appointment, encounter, doctor, reference) && patient?.userId) {
+      changed =
+        upsertNotificationWithHistory(
+          state,
+          createStableNotification({
+            id: `notification-missed-${appointment.id}`,
+            userId: patient.userId,
+            type: "appointment_missed",
+            title: "You missed this appointment",
+            message: `The slot on ${formatDate(appointment.startAt)} at ${formatTime(appointment.startAt)} has passed. Open My Appointments to reschedule.`,
+            encounterId: `encounter-${appointment.id}`,
+            appointmentId: appointment.id
+          })
+        ) || changed;
+    }
+  });
+
+  listCollection(state.labReports).forEach((report) => {
+    if (report.status !== "final") {
+      return;
+    }
+
+    const patient = state.patients.byId[report.patientId];
+    if (!patient?.userId) {
+      return;
+    }
+
+    changed =
+      upsertNotificationWithHistory(
+        state,
+        createStableNotification({
+          id: `notification-report-ready-${report.id}`,
+          userId: patient.userId,
+          type: "lab_report_ready",
+          title: "Report ready",
+          message: `${report.title || "Your lab report"} is ready to view in Lab Reports.`,
+          encounterId: `encounter-${report.appointmentId}`,
+          appointmentId: report.appointmentId
+        })
+      ) || changed;
+  });
+
+  return changed;
+}
+
 function upsertEmrSyncEntity(state, record) {
   upsertEntity(state.emrSync, record);
 }
@@ -1024,6 +1357,7 @@ function syncDoctorAndMaybeOriginal(state, doctorIds) {
 
 export const demoStore = {
   async getState() {
+    await hydrateStateFromMongo();
     return clone(readRaw());
   },
 
@@ -1059,7 +1393,7 @@ export const demoStore = {
 
   async signupPatient(form) {
     await wait(140);
-    return updateState((state) => {
+    const snapshot = updateState((state) => {
       const duplicate = listCollection(state.users).find(
         (user) =>
           user.role === "patient" &&
@@ -1080,11 +1414,39 @@ export const demoStore = {
       setSession(state, user, form.email || form.phone);
       return state;
     });
+
+    let syncStatus = { synced: false, skipped: true, reason: "not_attempted" };
+    try {
+      syncStatus = await syncSignupToDatabase({
+        role: "patient",
+        fullName: form.fullName,
+        email: form.email,
+        password: form.password,
+        phone: form.phone,
+        gender: form.gender,
+        city: form.city,
+        age: form.age,
+        abhaNumber: form.abhaNumber,
+        emergencyContactName: form.emergencyContactName,
+        emergencyContactPhone: form.emergencyContactPhone,
+        preferredLanguage: form.preferredLanguage
+      });
+    } catch (error) {
+      console.warn("[NIRA] Patient signup saved locally; DB sync skipped.", error);
+      syncStatus = {
+        synced: false,
+        skipped: false,
+        reason: "db_sync_failed",
+        error: String(error?.message || error)
+      };
+    }
+
+    return { snapshot, syncStatus };
   },
 
   async signupDoctor(form) {
     await wait(160);
-    return updateState((state) => {
+    const snapshot = updateState((state) => {
       const duplicate = listCollection(state.users).find(
         (user) =>
           user.role === "doctor" &&
@@ -1110,11 +1472,35 @@ export const demoStore = {
       setSession(state, user, form.email || form.phone);
       return state;
     });
+
+    let syncStatus = { synced: false, skipped: true, reason: "not_attempted" };
+    try {
+      syncStatus = await syncSignupToDatabase({
+        role: "doctor",
+        fullName: form.fullName,
+        email: form.email,
+        password: form.password,
+        phone: form.phone,
+        specialty: form.specialty,
+        licenseNumber: form.licenseNumber,
+        gender: form.gender
+      });
+    } catch (error) {
+      console.warn("[NIRA] Doctor signup saved locally; DB sync skipped.", error);
+      syncStatus = {
+        synced: false,
+        skipped: false,
+        reason: "db_sync_failed",
+        error: String(error?.message || error)
+      };
+    }
+
+    return { snapshot, syncStatus };
   },
 
   async signupAdmin(form) {
     await wait(160);
-    return updateState((state) => {
+    const snapshot = updateState((state) => {
       if (getAdminExists(state)) {
         throw new Error("Admin signup is disabled after the first clinic admin is created.");
       }
@@ -1128,6 +1514,27 @@ export const demoStore = {
       setSession(state, user, form.email || form.phone);
       return state;
     });
+
+    let syncStatus = { synced: false, skipped: true, reason: "not_attempted" };
+    try {
+      syncStatus = await syncSignupToDatabase({
+        role: "admin",
+        fullName: form.fullName,
+        email: form.email,
+        password: form.password,
+        phone: form.phone
+      });
+    } catch (error) {
+      console.warn("[NIRA] Admin signup saved locally; DB sync skipped.", error);
+      syncStatus = {
+        synced: false,
+        skipped: false,
+        reason: "db_sync_failed",
+        error: String(error?.message || error)
+      };
+    }
+
+    return { snapshot, syncStatus };
   },
 
   async updateCurrentProfile(payload) {
@@ -1242,15 +1649,29 @@ export const demoStore = {
     return snapshot;
   },
 
+  async addPatient(form) {
+    await wait(140);
+    return updateState((state) => {
+      const duplicate = findDuplicateRoleUser(state, "patient", form);
+
+      if (duplicate) {
+        throw new Error("A patient account already exists with that phone or email.");
+      }
+
+      const profileId = uid("patient");
+      const user = createUserAccount("patient", profileId, form, "active");
+      const profile = createPatientProfile(user, form);
+
+      upsertEntity(state.users, user);
+      upsertEntity(state.patients, profile);
+      return state;
+    });
+  },
+
   async addDoctor(form) {
     await wait(140);
     return updateState((state) => {
-      const duplicate = listCollection(state.users).find(
-        (user) =>
-          user.role === "doctor" &&
-          (normalizePhone(user.phone) === normalizePhone(form.phone) ||
-            user.email.toLowerCase() === form.email.toLowerCase())
-      );
+      const duplicate = findDuplicateRoleUser(state, "doctor", form);
 
       if (duplicate) {
         throw new Error("A doctor account already exists with that phone or email.");
@@ -1275,12 +1696,7 @@ export const demoStore = {
   async addAdmin(form) {
     await wait(140);
     return updateState((state) => {
-      const duplicate = listCollection(state.users).find(
-        (user) =>
-          user.role === "admin" &&
-          (normalizePhone(user.phone) === normalizePhone(form.phone) ||
-            (form.email && user.email.toLowerCase() === form.email.toLowerCase()))
-      );
+      const duplicate = findDuplicateRoleUser(state, "admin", form);
 
       if (duplicate) {
         throw new Error("An admin account already exists with that phone or email.");
@@ -1296,6 +1712,42 @@ export const demoStore = {
     });
   },
 
+  async updatePatient(patientId, payload) {
+    await wait();
+    return updateState((state) => {
+      const patient = state.patients.byId[patientId];
+      if (!patient) {
+        throw new Error("Patient not found.");
+      }
+
+      const user = state.users.byId[patient.userId];
+      const duplicate = findDuplicateRoleUser(state, "patient", payload, user.id);
+
+      if (duplicate) {
+        throw new Error("Another patient already uses that phone or email.");
+      }
+
+      const nextPatient = {
+        ...patient,
+        ...payload,
+        age:
+          payload.age === ""
+            ? null
+            : payload.age !== undefined
+              ? Number(payload.age)
+              : patient.age
+      };
+
+      state.patients.byId[patientId] = nextPatient;
+      state.users.byId[user.id] = {
+        ...user,
+        phone: payload.phone !== undefined ? payload.phone : user.phone,
+        email: payload.email !== undefined ? payload.email : user.email
+      };
+      return state;
+    });
+  },
+
   async updateDoctor(doctorId, payload) {
     await wait();
     return updateState((state) => {
@@ -1305,6 +1757,12 @@ export const demoStore = {
       }
 
       const user = state.users.byId[doctor.userId];
+      const duplicate = findDuplicateRoleUser(state, "doctor", payload, user.id);
+
+      if (duplicate) {
+        throw new Error("Another doctor already uses that phone or email.");
+      }
+
       state.doctors.byId[doctorId] = { ...doctor, ...payload };
       state.users.byId[user.id] = {
         ...user,
@@ -1383,6 +1841,14 @@ export const demoStore = {
         status: "archived"
       };
       syncDoctorDaySchedules(state, doctorId, state.meta.today, 30);
+      return state;
+    });
+  },
+
+  async deletePatient(patientId) {
+    await wait(120);
+    return updateState((state) => {
+      removePatientCascade(state, patientId);
       return state;
     });
   },

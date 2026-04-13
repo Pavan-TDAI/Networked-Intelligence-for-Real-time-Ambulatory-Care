@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, CheckCircle2, Clock, AlertCircle, FileText, TestTube, X, CheckCheck } from "lucide-react";
+import { Bell, CheckCircle2, Clock, AlertCircle, FileText, FlaskConical, TestTube, X, CheckCheck } from "lucide-react";
 import { Card, CardHeader } from "../../components/ui/Card";
 import { formatTime } from "../../lib/format";
 import "./NotificationBell.css";
 
-function getNotificationLink(notification) {
+function getNotificationLink(notification, role) {
   if (notification.type === "prescription_approved" && notification.prescriptionId) {
     return `/patient/prescriptions/${notification.prescriptionId}`;
+  }
+
+  if (notification.type === "lab_report_ready") {
+    return "/patient/lab-reports";
   }
 
   if (notification.type === "tests_ordered") {
@@ -15,15 +19,41 @@ function getNotificationLink(notification) {
   }
 
   if (notification.type === "precheck_sent" || notification.type === "precheck_questions_ready") {
+    if (role === "doctor" && notification.appointmentId) {
+      return `/doctor/patient/${notification.appointmentId}`;
+    }
     return notification.appointmentId
       ? `/patient/appointments/${notification.appointmentId}?bucket=action`
       : "/patient/appointments?bucket=action";
   }
 
   if (notification.type === "precheck_completed") {
+    if (role === "doctor" && notification.appointmentId) {
+      return `/doctor/patient/${notification.appointmentId}`;
+    }
     return notification.appointmentId
       ? `/patient/appointments/${notification.appointmentId}?bucket=review`
       : "/patient/appointments?bucket=review";
+  }
+
+  if (notification.type === "appointment_missed") {
+    return notification.appointmentId
+      ? `/patient/appointments/${notification.appointmentId}?bucket=missed`
+      : "/patient/appointments?bucket=missed";
+  }
+
+  if (notification.type === "appointment_reminder") {
+    if (role === "doctor" && notification.appointmentId) {
+      return `/doctor/patient/${notification.appointmentId}`;
+    }
+
+    if (role === "admin") {
+      return "/admin/appointments";
+    }
+
+    return notification.appointmentId
+      ? `/patient/appointments/${notification.appointmentId}?bucket=upcoming`
+      : "/patient/appointments?bucket=upcoming";
   }
 
   if (notification.type === "appointment_booked" && notification.appointmentId) {
@@ -33,7 +63,7 @@ function getNotificationLink(notification) {
   return null;
 }
 
-export function NotificationBell({ notifications, onMarkAsRead }) {
+export function NotificationBell({ notifications, onMarkAsRead, role }) {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const unreadCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
@@ -47,7 +77,7 @@ export function NotificationBell({ notifications, onMarkAsRead }) {
 
   const handleNotificationClick = (notification) => {
     handleMarkAsRead(notification);
-    const link = getNotificationLink(notification);
+    const link = getNotificationLink(notification, role);
     if (link) {
       setIsOpen(false);
       navigate(link);
@@ -84,8 +114,8 @@ export function NotificationBell({ notifications, onMarkAsRead }) {
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="notification-bell-panel absolute right-0 z-50 mt-2 max-h-96 w-[22rem] overflow-y-auto rounded-2xl border border-line bg-surface-1 shadow-2xl sm:w-96">
-          <div className="sticky top-0 flex items-center justify-between gap-2 border-b bg-surface-1/95 p-4 backdrop-blur">
+        <div className="notification-bell-panel absolute right-0 z-50 mt-2 max-h-96 w-[22rem] overflow-y-auto rounded-2xl border border-line bg-white shadow-2xl sm:w-96">
+          <div className="sticky top-0 flex items-center justify-between gap-2 border-b bg-white p-4">
             <div>
               <h3 className="font-semibold text-text-primary">Notifications</h3>
               <p className="mt-0.5 text-xs text-text-tertiary">
@@ -125,7 +155,7 @@ export function NotificationBell({ notifications, onMarkAsRead }) {
                   key={notification.id}
                   notification={notification}
                   onClick={() => handleNotificationClick(notification)}
-                  hasLink={Boolean(getNotificationLink(notification))}
+                  hasLink={Boolean(getNotificationLink(notification, role))}
                 />
               ))}
             </div>
@@ -161,10 +191,14 @@ function NotificationItem({ notification, onClick, hasLink }) {
         return <CheckCircle2 size={16} className="text-green-600" />;
       case "appointment_reminder":
         return <Clock size={16} className="text-orange-600" />;
+      case "appointment_missed":
+        return <AlertCircle size={16} className="text-rose-600" />;
       case "prescription_approved":
         return <CheckCircle2 size={16} className="text-green-600" />;
       case "tests_ordered":
         return <TestTube size={16} className="text-cyan-600" />;
+      case "lab_report_ready":
+        return <FlaskConical size={16} className="text-violet-600" />;
       default:
         return <AlertCircle size={16} className="text-text-secondary" />;
     }

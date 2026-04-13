@@ -362,10 +362,10 @@ export function NurseDashboardPage() {
         </div>
 
         <div id="dashboard" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Critical alerts" value={`${todayStats.alerts}`} tone="accent" />
-          <StatCard label="My patient list" value={`${todayStats.totalPatients}`} tone="soft" />
-          <StatCard label="Vitals taken" value={todayStats.vitalsCompletion} />
-          <StatCard label="Meds given" value={`${todayStats.medCompletion}%`} />
+          <StatCard label="Critical alerts" value={`${todayStats.alerts}`} tone="accent" href="#alerts" />
+          <StatCard label="My patient list" value={`${todayStats.totalPatients}`} tone="soft" href="#patients" />
+          <StatCard label="Vitals taken" value={todayStats.vitalsCompletion} href="#vitals" />
+          <StatCard label="Meds given" value={`${todayStats.medCompletion}%`} href="#meds" />
         </div>
 
         <Card>
@@ -582,7 +582,7 @@ export function NurseDashboardPage() {
             </div>
           </Card>
 
-          <Card>
+          <Card id="meds">
             <SectionHeading
               eyebrow="Medication admin"
               title="Barcode + 5-rights confirmation"

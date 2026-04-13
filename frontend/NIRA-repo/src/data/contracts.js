@@ -25,6 +25,7 @@
  * @property {string} id
  * @property {string} userId
  * @property {string} fullName
+ * @property {string} profilePhoto
  * @property {string} preferredLanguage
  * @property {number | null} age
  * @property {string} gender
@@ -42,6 +43,7 @@
  * @property {string} id
  * @property {string} userId
  * @property {string} fullName
+ * @property {string} profilePhoto
  * @property {string} specialty
  * @property {string} clinic
  * @property {string} licenseNumber
@@ -57,6 +59,7 @@
  * @property {string} id
  * @property {string} userId
  * @property {string} fullName
+ * @property {string} profilePhoto
  * @property {string} clinicName
  * @property {string} phone
  * @property {string} email
@@ -67,6 +70,7 @@
  * @property {string} id
  * @property {string} userId
  * @property {string} fullName
+ * @property {string} profilePhoto
  * @property {string} clinic
  * @property {string} department
  * @property {string} shift

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { CalendarCheck2, CalendarClock, CheckCircle2, FileText, Star, UserCircle2 } from "lucide-react";
 import { AppShell } from "../../components/layout/AppShell";
 import { Badge } from "../../components/ui/Badge";
@@ -16,17 +16,50 @@ function getDoctorRating(doctorId) {
   if (!doctorId) {
     return "4.8";
   }
+
   const tail = doctorId.charCodeAt(doctorId.length - 1) % 3;
   return (4.7 + tail * 0.1).toFixed(1);
 }
 
 export function BookingPage() {
   const { state, session, actions } = useDemoData();
-  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { patient } = getPatientWorkspace(state);
   const [language] = usePatientLanguage(patient?.preferredLanguage || "en");
-  const doctors = useMemo(() => getBookableDoctors(state), [state]);
-  const [selectedDoctorId, setSelectedDoctorId] = useState("");
+  const preferredDoctorId = searchParams.get("doctorId") || "";
+  const rescheduleAppointmentId = searchParams.get("rescheduleAppointmentId") || "";
+  const rescheduleAppointment = rescheduleAppointmentId ? state.appointments.byId[rescheduleAppointmentId] || null : null;
+  const isRescheduleMode = Boolean(rescheduleAppointment);
+  const doctors = useMemo(() => {
+    const bookableDoctors = getBookableDoctors(state);
+    const lockedDoctorId = isRescheduleMode ? rescheduleAppointment?.doctorId : preferredDoctorId;
+
+    if (!lockedDoctorId) {
+      return bookableDoctors;
+    }
+
+    if (bookableDoctors.some((entry) => entry.id === lockedDoctorId)) {
+      return bookableDoctors;
+    }
+
+    const lockedDoctor = state.doctors.byId[lockedDoctorId];
+    if (!lockedDoctor) {
+      return bookableDoctors;
+    }
+
+    return [
+      {
+        ...lockedDoctor,
+        nextSchedule: null,
+        nextAvailableSlot: null,
+        availabilityLabel: "No live online slots right now"
+      },
+      ...bookableDoctors
+    ];
+  }, [isRescheduleMode, preferredDoctorId, rescheduleAppointment?.doctorId, state]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState(
+    () => (isRescheduleMode ? rescheduleAppointment?.doctorId : preferredDoctorId) || ""
+  );
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlotId, setSelectedSlotId] = useState("");
   const [visitType, setVisitType] = useState("booked");
@@ -43,11 +76,24 @@ export function BookingPage() {
             schedule: getScheduleByDate(state, doctor.id, date)
           }))
         : [],
-    [state, doctor, dateOptions]
+    [dateOptions, doctor, state]
   );
   const selectedSchedule = doctor ? getScheduleByDate(state, doctor.id, selectedDate) : null;
   const selectedSlot = selectedSchedule?.slots.find((slot) => slot.id === selectedSlotId) || null;
   const confirmationBundle = confirmationId ? state.appointments.byId[confirmationId] : null;
+  const visibleDoctors = isRescheduleMode && doctor
+    ? [doctor]
+    : selectedDoctorId
+      ? doctors.filter((entry) => entry.id === selectedDoctorId)
+      : doctors;
+
+  useEffect(() => {
+    const lockedDoctorId = isRescheduleMode ? rescheduleAppointment?.doctorId : preferredDoctorId;
+
+    if (lockedDoctorId && doctors.some((entry) => entry.id === lockedDoctorId)) {
+      setSelectedDoctorId(lockedDoctorId);
+    }
+  }, [doctors, isRescheduleMode, preferredDoctorId, rescheduleAppointment?.doctorId]);
 
   useEffect(() => {
     if (!doctor) {
@@ -57,13 +103,17 @@ export function BookingPage() {
     }
 
     const nextWithAvailability = schedules.find((entry) => entry.schedule?.slotSummary.available > 0);
-    setSelectedDate(nextWithAvailability?.date || state.meta.today);
+    const preferredDate = isRescheduleMode && rescheduleAppointment?.doctorId === doctor.id
+      ? nextWithAvailability?.date || state.meta.today
+      : nextWithAvailability?.date || state.meta.today;
+
+    setSelectedDate(preferredDate);
     setSelectedSlotId("");
-  }, [doctor?.id]);
+  }, [doctor?.id, isRescheduleMode, rescheduleAppointment?.doctorId, schedules, state.meta.today]);
 
   useEffect(() => {
     setSelectedSlotId("");
-  }, [selectedDate, selectedSchedule?.id, selectedDoctorId]);
+  }, [selectedDate, selectedDoctorId, selectedSchedule?.id]);
 
   async function handleBooking() {
     if (!selectedSlotId || !doctor) {
@@ -71,40 +121,68 @@ export function BookingPage() {
     }
 
     setSubmitting(true);
-    const snapshot = await actions.booking.bookAppointment({
-      patientId: patient.id,
-      doctorId: doctor.id,
-      slotId: selectedSlotId,
-      date: selectedDate,
-      bookedByUserId: session.userId,
-      visitType,
-      language
-    });
-    setConfirmationId(snapshot.ui.lastViewedAppointmentId);
-    setSubmitting(false);
+
+    try {
+      if (isRescheduleMode && rescheduleAppointment) {
+        await actions.booking.rescheduleAppointment(rescheduleAppointment.id, {
+          doctorId: doctor.id,
+          date: selectedDate,
+          slotId: selectedSlotId
+        });
+        setConfirmationId(rescheduleAppointment.id);
+        return;
+      }
+
+      const snapshot = await actions.booking.bookAppointment({
+        patientId: patient.id,
+        doctorId: doctor.id,
+        slotId: selectedSlotId,
+        date: selectedDate,
+        bookedByUserId: session.userId,
+        visitType,
+        language
+      });
+
+      setConfirmationId(snapshot.ui.lastViewedAppointmentId);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
     <AppShell
       title="Book by live doctor slots"
-      subtitle="Doctor cards, live teal slots, and a one-tap confirmation flow."
+      subtitle={
+        isRescheduleMode
+          ? "Reschedule with the same doctor by picking a fresh live slot."
+          : "Doctor cards, live teal slots, and a one-tap confirmation flow."
+      }
     >
       <div className="space-y-4">
         <Card density="compact">
           <CardHeader
             eyebrow="Doctor list"
-            title="Choose your doctor"
-            description="Goal: 30-second booking"
+            title={isRescheduleMode ? "Same doctor, fresh slot" : "Choose your doctor"}
+            description={
+              isRescheduleMode
+                ? "This reschedule flow keeps the original doctor and only updates the slot."
+                : "Goal: 30-second booking"
+            }
           />
-          {selectedDoctorId ? (
+          {selectedDoctorId && !isRescheduleMode ? (
             <div className="mb-3 flex justify-end">
               <Button type="button" variant="secondary" size="sm" onClick={() => setSelectedDoctorId("")}>
                 Change doctor
               </Button>
             </div>
           ) : null}
+          {isRescheduleMode && doctor ? (
+            <div className="mb-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-950">
+              Rescheduling stays with <span className="font-semibold">{doctor.fullName}</span>. To change doctors, book a new appointment instead of rescheduling this one.
+            </div>
+          ) : null}
           <div className={`grid gap-3 ${selectedDoctorId ? "" : "lg:grid-cols-2"}`}>
-            {(selectedDoctorId ? doctors.filter((entry) => entry.id === selectedDoctorId) : doctors).map((entry) => {
+            {visibleDoctors.map((entry) => {
               const quickSlots = getDateRange(state.meta.today, 14)
                 .map((date) => getScheduleByDate(state, entry.id, date))
                 .flatMap((schedule) => (schedule?.slots || []).filter((slot) => slot.status === "available"))
@@ -115,12 +193,17 @@ export function BookingPage() {
                 <button
                   key={entry.id}
                   type="button"
-                  onClick={() => setSelectedDoctorId(entry.id)}
+                  onClick={() => {
+                    if (!isRescheduleMode) {
+                      setSelectedDoctorId(entry.id);
+                    }
+                  }}
                   className={`rounded-2xl border p-4 text-left transition ${
                     isSelected
                       ? "border-brand-sky bg-brand-mint p-5 shadow-soft ring-2 ring-brand-sky/30"
                       : "border-line bg-surface-2 hover:bg-white"
                   }`}
+                  disabled={isRescheduleMode}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
@@ -140,7 +223,10 @@ export function BookingPage() {
                   <div className="mt-3 flex flex-wrap gap-2" aria-hidden="true">
                     {quickSlots.length ? (
                       quickSlots.map((slot) => (
-                        <span key={slot.id} className="rounded-full bg-brand-sky px-2.5 py-1 text-[11px] font-semibold text-white">
+                        <span
+                          key={slot.id}
+                          className="rounded-full bg-brand-sky px-2.5 py-1 text-[11px] font-semibold text-white"
+                        >
                           {formatTime(slot.startAt)}
                         </span>
                       ))
@@ -216,12 +302,18 @@ export function BookingPage() {
               <Field label="Phone">
                 <Input value={patient?.phone || ""} readOnly />
               </Field>
-              <Field label="Visit type">
-                <Select value={visitType} onChange={(event) => setVisitType(event.target.value)}>
-                  <option value="booked">Booked</option>
-                  <option value="walk_in">Walk-in</option>
-                </Select>
-              </Field>
+              {isRescheduleMode ? (
+                <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
+                  This will update the current appointment instead of creating a second booking.
+                </div>
+              ) : (
+                <Field label="Visit type">
+                  <Select value={visitType} onChange={(event) => setVisitType(event.target.value)}>
+                    <option value="booked">Booked</option>
+                    <option value="walk_in">Walk-in</option>
+                  </Select>
+                </Field>
+              )}
               <div className="rounded-xl border border-line bg-surface-2 p-4 text-sm text-muted">
                 {doctor ? (
                   <>
@@ -238,7 +330,13 @@ export function BookingPage() {
           <div className="space-y-3">
             <Button onClick={handleBooking} disabled={!selectedSlotId || submitting} className="w-full sm:min-w-[220px]">
               <CalendarCheck2 className="h-4 w-4" />
-              {submitting ? "Creating appointment..." : "Confirm slot"}
+              {submitting
+                ? isRescheduleMode
+                  ? "Rescheduling appointment..."
+                  : "Creating appointment..."
+                : isRescheduleMode
+                  ? "Confirm reschedule"
+                  : "Confirm slot"}
             </Button>
             <Button asChild variant="secondary" className="w-full sm:min-w-[220px]">
               <Link to="/patient/appointments">
@@ -257,7 +355,9 @@ export function BookingPage() {
                   <CheckCircle2 className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-base font-semibold text-emerald-900">Appointment created</div>
+                  <div className="text-base font-semibold text-emerald-900">
+                    {isRescheduleMode ? "Appointment rescheduled" : "Appointment created"}
+                  </div>
                   <div className="text-sm text-emerald-800">
                     Token {confirmationBundle.token} confirmed for {formatDate(confirmationBundle.startAt)} at {formatTime(confirmationBundle.startAt)}
                   </div>
@@ -265,7 +365,7 @@ export function BookingPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button asChild>
-                  <Link to={`/patient/appointments/${confirmationBundle.id}?bucket=action`}>
+                  <Link to={`/patient/appointments/${confirmationBundle.id}?bucket=${isRescheduleMode ? "upcoming" : "action"}`}>
                     <FileText className="h-4 w-4" />
                     Open appointment
                   </Link>

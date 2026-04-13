@@ -78,19 +78,19 @@ export function DemoDataProvider({ children }) {
           return snapshot;
         },
         async signupPatient(payload) {
-          const snapshot = await demoStore.signupPatient(payload);
-          setState(snapshot);
-          return snapshot;
+          const result = await demoStore.signupPatient(payload);
+          setState(result.snapshot);
+          return result;
         },
         async signupDoctor(payload) {
-          const snapshot = await demoStore.signupDoctor(payload);
-          setState(snapshot);
-          return snapshot;
+          const result = await demoStore.signupDoctor(payload);
+          setState(result.snapshot);
+          return result;
         },
         async signupAdmin(payload) {
-          const snapshot = await demoStore.signupAdmin(payload);
-          setState(snapshot);
-          return snapshot;
+          const result = await demoStore.signupAdmin(payload);
+          setState(result.snapshot);
+          return result;
         },
         async updateCurrentProfile(payload) {
           const snapshot = await demoStore.updateCurrentProfile(payload);
@@ -185,6 +185,11 @@ export function DemoDataProvider({ children }) {
         }
       },
       admin: {
+        async addPatient(payload) {
+          const snapshot = await demoStore.addPatient(payload);
+          setState(snapshot);
+          return snapshot;
+        },
         async addDoctor(payload) {
           const snapshot = await demoStore.addDoctor(payload);
           setState(snapshot);
@@ -192,6 +197,11 @@ export function DemoDataProvider({ children }) {
         },
         async addAdmin(payload) {
           const snapshot = await demoStore.addAdmin(payload);
+          setState(snapshot);
+          return snapshot;
+        },
+        async updatePatient(patientId, payload) {
+          const snapshot = await demoStore.updatePatient(patientId, payload);
           setState(snapshot);
           return snapshot;
         },
@@ -217,6 +227,11 @@ export function DemoDataProvider({ children }) {
         },
         async archiveDoctor(doctorId) {
           const snapshot = await demoStore.archiveDoctor(doctorId);
+          setState(snapshot);
+          return snapshot;
+        },
+        async deletePatient(patientId) {
+          const snapshot = await demoStore.deletePatient(patientId);
           setState(snapshot);
           return snapshot;
         },

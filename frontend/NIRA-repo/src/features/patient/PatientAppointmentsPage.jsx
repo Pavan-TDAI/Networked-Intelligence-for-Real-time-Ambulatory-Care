@@ -7,6 +7,7 @@ import { Card, CardHeader } from "../../components/ui/Card";
 import { useDemoData } from "../../app/DemoDataProvider";
 import {
   getPatientAppointmentById,
+  getPatientReschedulePath,
   getPatientWorkspace,
   PATIENT_APPOINTMENT_BUCKETS
 } from "../shared/selectors";
@@ -30,6 +31,10 @@ const bucketMeta = {
     label: "In review",
     description: "The doctor is reviewing or validating the visit."
   },
+  missed: {
+    label: "Missed",
+    description: "Slots that already passed and should be rescheduled."
+  },
   completed: {
     label: "Completed / prescriptions",
     description: "Finished visits with prescription outcomes."
@@ -47,6 +52,10 @@ function getBucketTone(bucket) {
 
   if (bucket === "review") {
     return "info";
+  }
+
+  if (bucket === "missed") {
+    return "danger";
   }
 
   if (bucket === "completed") {
@@ -80,11 +89,19 @@ export function PatientAppointmentsPage() {
     appointmentId &&
     selectedAppointment?.id === appointmentId;
 
-  const tabFromBucket = bucket === "completed" ? "past" : bucket === "cancelled" ? "cancelled" : "upcoming";
+  const tabFromBucket =
+    bucket === "completed"
+      ? "past"
+      : bucket === "cancelled"
+        ? "cancelled"
+        : bucket === "missed"
+          ? "missed"
+          : "upcoming";
 
   const tabMap = {
     upcoming: [...appointmentsByBucket.upcoming, ...appointmentsByBucket.action, ...appointmentsByBucket.review]
       .sort((left, right) => new Date(left.startAt) - new Date(right.startAt)),
+    missed: [...appointmentsByBucket.missed].sort((left, right) => new Date(right.startAt) - new Date(left.startAt)),
     past: appointmentsByBucket.completed,
     cancelled: appointmentsByBucket.cancelled
   };
@@ -127,9 +144,10 @@ export function PatientAppointmentsPage() {
     >
       <div className="space-y-4">
         <div className="rounded-2xl border border-line bg-white p-1.5 sm:p-2">
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-4">
             {[
               { key: "upcoming", label: "Upcoming", count: tabMap.upcoming.length, icon: Timer },
+              { key: "missed", label: "Missed", count: tabMap.missed.length, icon: RotateCcw },
               { key: "past", label: "Past", count: tabMap.past.length, icon: History },
               { key: "cancelled", label: "Cancelled", count: tabMap.cancelled.length, icon: Ban }
             ].map((tab) => (
@@ -158,13 +176,22 @@ export function PatientAppointmentsPage() {
           <Card density="compact" className={appointmentId ? "hidden lg:block" : ""}>
             <CardHeader
               eyebrow="List view"
-              title={tabFromBucket === "upcoming" ? "Upcoming appointments" : tabFromBucket === "past" ? "Past appointments" : "Cancelled appointments"}
+              title={
+                tabFromBucket === "upcoming"
+                  ? "Upcoming appointments"
+                  : tabFromBucket === "past"
+                    ? "Past appointments"
+                    : tabFromBucket === "missed"
+                      ? "Missed appointments"
+                      : "Cancelled appointments"
+              }
               description="Goal: one-tap reschedule and directions from each row."
               actions={<Badge tone={getBucketTone(bucket)}>{bucketMeta[bucket]?.label || "Appointments"}</Badge>}
             />
             <div className="space-y-3">
               {(tabMap[tabFromBucket] || []).map((appointment) => {
                 const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appointment.doctor?.clinic || "NIRA Clinic")}`;
+                const reschedulePath = getPatientReschedulePath(appointment);
                 return (
                   <div
                     key={appointment.id}
@@ -185,11 +212,11 @@ export function PatientAppointmentsPage() {
                     </Link>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {tabFromBucket === "upcoming" ? (
+                      {tabFromBucket === "upcoming" || tabFromBucket === "missed" ? (
                         <Button asChild variant="secondary" size="sm">
-                          <Link to="/patient/booking">
+                          <Link to={reschedulePath}>
                             <RotateCcw className="h-4 w-4" />
-                            Reschedule
+                            {tabFromBucket === "missed" ? "Reschedule same doctor" : "Reschedule"}
                           </Link>
                         </Button>
                       ) : null}
@@ -215,7 +242,11 @@ export function PatientAppointmentsPage() {
               {!(tabMap[tabFromBucket] || []).length ? (
                 <div className="rounded-xl border border-dashed border-line bg-surface-2 p-6 text-center">
                   <div className="text-base font-semibold text-ink">No appointments in this tab</div>
-                  <div className="mt-2 text-sm leading-6 text-muted">Try a different filter or book a new visit.</div>
+                  <div className="mt-2 text-sm leading-6 text-muted">
+                    {tabFromBucket === "missed"
+                      ? "You have not missed any appointments right now."
+                      : "Try a different filter or book a new visit."}
+                  </div>
                   <div className="mt-5">
                     <Button asChild>
                       <Link to="/patient/booking">

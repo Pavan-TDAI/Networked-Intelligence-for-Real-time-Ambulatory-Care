@@ -53,20 +53,22 @@ export function DoctorDashboardPage() {
 
   const dashboardStats = useMemo(
     () => [
-      { label: "Patients in queue", value: queueCounts.total, tone: "accent" },
+      { label: "Patients in queue", value: queueCounts.total, tone: "accent", filterKey: "all" },
       {
-        label: "Pre-check done",
-        value: appointments.filter((item) => isPreCheckDone(item)).length,
-        tone: "soft"
+        label: "Pre-check stage",
+        value: appointments.filter((item) => ["awaiting_interview", "ai_ready"].includes(item.queueStatus)).length,
+        tone: "soft",
+        filterKey: "pre_check"
       },
-      { label: "Under consultation", value: queueCounts.inConsult, tone: "default" },
+      { label: "Under consultation", value: queueCounts.inConsult, tone: "default", filterKey: "in_consult" },
       {
         label: "Completed today",
         value: appointments.filter((item) => item.queueStatus === "approved" || item.bookingStatus === "completed").length,
-        tone: "default"
+        tone: "default",
+        filterKey: "approved"
       },
-      { label: "Lab requests", value: labReports.length, tone: "default" },
-      { label: "Doctor availability", value: doctor?.availability?.length || 0, tone: "soft" }
+      { label: "Lab requests", value: labReports.length, tone: "default", to: "/doctor/lab-reports" },
+      { label: "Doctor availability", value: doctor?.availability?.length || 0, tone: "soft", to: "/doctor/availability" }
     ],
     [appointments, doctor?.availability?.length, labReports.length, queueCounts.inConsult, queueCounts.total]
   );
@@ -105,7 +107,15 @@ export function DoctorDashboardPage() {
         ) : null}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {dashboardStats.map((item) => (
-            <StatCard key={item.label} label={item.label} value={`${item.value}`} tone={item.tone} />
+            <StatCard
+              key={item.label}
+              label={item.label}
+              value={`${item.value}`}
+              tone={item.tone}
+              to={item.to}
+              onClick={item.filterKey ? () => setFilter(item.filterKey) : undefined}
+              active={item.filterKey ? filter === item.filterKey : false}
+            />
           ))}
         </div>
 

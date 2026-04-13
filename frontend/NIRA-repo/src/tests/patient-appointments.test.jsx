@@ -2,8 +2,17 @@ import { screen } from "@testing-library/react";
 import { render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { afterEach, vi } from "vitest";
 import { PatientAppointmentDetailPanel } from "../features/patient/PatientAppointmentDetailPanel";
 import { renderApp } from "./testUtils";
+import { createSeedState } from "../data/seed";
+import { addDays, toIsoDateTime } from "../lib/schedule";
+import { STORAGE_KEY } from "../services/demoStore";
+
+afterEach(() => {
+  vi.useRealTimers();
+  window.localStorage.removeItem(STORAGE_KEY);
+});
 
 async function loginPatient(user) {
   await screen.findByRole("heading", { name: /patient login/i, level: 1 });
@@ -29,6 +38,16 @@ test("patient dashboard buckets open appointment lists and review detail states"
 });
 
 test("patient can cancel a non-completed appointment and the slot becomes bookable again", async () => {
+  const seedState = createSeedState();
+  const tomorrow = addDays(seedState.meta.today, 1);
+  seedState.appointments.byId["appointment-aasha"] = {
+    ...seedState.appointments.byId["appointment-aasha"],
+    slotId: `slot-doctor-mehra-${tomorrow}-09:15`,
+    startAt: toIsoDateTime(tomorrow, "09:15"),
+    endAt: toIsoDateTime(tomorrow, "09:30")
+  };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seedState));
+
   const user = userEvent.setup();
   renderApp("/auth/login/patient");
 
@@ -36,7 +55,7 @@ test("patient can cancel a non-completed appointment and the slot becomes bookab
   await user.click(screen.getByRole("link", { name: /in review/i }));
   await user.click(screen.getByRole("link", { name: /dr\. nisha mehra/i }));
 
-  await user.click(await screen.findByRole("button", { name: /cancel appointment/i }));
+  await user.click(screen.getByRole("button", { name: /cancel appointment/i }));
   await user.click(screen.getByRole("button", { name: /yes, cancel this appointment/i }));
 
   expect(await screen.findByText("Appointment cancelled")).toBeInTheDocument();

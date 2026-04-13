@@ -9,7 +9,7 @@ import {
   User2,
   Wrench,
   LogOut,
-  MoreVertical,
+  Menu,
   X,
   FlaskConical,
   TestTube
@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "../ui/Button";
 import { NotificationBell } from "../ui/NotificationBell";
 import { NiraLogo, NiraLogoMini } from "../ui/NiraLogo";
+import { ProfileAvatar } from "../ui/ProfileAvatar";
 import { cn } from "../../lib/utils";
 import { useDemoData } from "../../app/DemoDataProvider";
 import { getCurrentProfile } from "../../features/shared/selectors";
@@ -88,10 +89,25 @@ export function AppShell({ title, subtitle, actions, children }) {
     const all = (state?.notifications?.allIds || []).map((id) => state.notifications.byId[id]).filter(Boolean);
     const sessionUserId = state?.session?.userId;
     if (!sessionUserId) {
-      return all;
+      return all.sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
     }
-    return all.filter((n) => n.userId === sessionUserId);
+    return all
+      .filter((n) => n.userId === sessionUserId)
+      .sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
   }, [state?.notifications, state?.session?.userId]);
+
+  useEffect(() => {
+    if (!state?.session?.isAuthenticated) {
+      setMobileOpen(false);
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      appActions.refresh();
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [appActions, state?.session?.isAuthenticated]);
 
   useEffect(() => {
     if (!mobileOpen) {
@@ -138,6 +154,7 @@ export function AppShell({ title, subtitle, actions, children }) {
             {state?.session?.isAuthenticated ? (
               <NotificationBell
                 notifications={notifications}
+                role={role}
                 onMarkAsRead={(notificationId) => appActions.notifications.markAsRead(notificationId)}
               />
             ) : null}
@@ -149,9 +166,12 @@ export function AppShell({ title, subtitle, actions, children }) {
                 className="hidden items-center gap-2 rounded-xl border border-line/50 bg-white/60 px-3 py-1.5 transition hover:bg-white md:flex"
                 title="Go to profile"
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand-midnight text-[10px] font-bold text-white">
-                  {profile.fullName?.charAt(0) || "U"}
-                </div>
+                <ProfileAvatar
+                  name={profile.fullName}
+                  photo={profile.profilePhoto}
+                  size="sm"
+                  tone="solid"
+                />
                 <span className="text-[12px] font-semibold text-ink">{profile.fullName}</span>
               </NavLink>
             ) : null}
@@ -181,14 +201,16 @@ export function AppShell({ title, subtitle, actions, children }) {
             ) : null}
 
             {/* Mobile toggle */}
-            <button
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/60 text-ink sm:h-10 sm:w-10"
-              onClick={() => setMobileOpen((v) => !v)}
-              aria-label={mobileOpen ? "Close menu" : "Open menu"}
-              aria-expanded={mobileOpen}
-            >
-              {mobileOpen ? <X className="h-5 w-5" /> : <MoreVertical className="h-5 w-5" />}
-            </button>
+            {state?.session?.isAuthenticated ? (
+              <button
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/60 text-ink sm:h-10 sm:w-10"
+                onClick={() => setMobileOpen((v) => !v)}
+                aria-label={mobileOpen ? "Close menu" : "Open menu"}
+                aria-expanded={mobileOpen}
+              >
+                {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -238,9 +260,13 @@ export function AppShell({ title, subtitle, actions, children }) {
                 <div className="flex-1 overflow-y-auto p-4">
                   {profile ? (
                     <NavLink to={profilePath} onClick={() => setMobileOpen(false)} className="mb-4 flex items-center gap-2.5 rounded-xl border border-line/50 bg-white/70 px-3 py-2.5 transition hover:bg-white" title="Go to profile">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-midnight text-[11px] font-bold text-white">
-                        {profile.fullName?.charAt(0) || "U"}
-                      </div>
+                      <ProfileAvatar
+                        name={profile.fullName}
+                        photo={profile.profilePhoto}
+                        size="sm"
+                        tone="solid"
+                        className="h-7 w-7 text-[11px]"
+                      />
                       <div className="min-w-0">
                         <div className="truncate text-sm font-semibold text-ink">{profile.fullName}</div>
                         <div className="text-[11px] capitalize text-muted">{state?.session?.role || "user"}</div>

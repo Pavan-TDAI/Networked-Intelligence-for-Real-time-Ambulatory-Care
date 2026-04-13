@@ -25,7 +25,7 @@ const hospitalRoles = [
     border: "hover:border-[#29355D]/40",
     iconBg: "bg-[#29355D]/10 text-[#29355D]",
     loginLabel: "Doctor login",
-    signupLabel: ""
+    signupLabel: "Doctor signup"
   },
   {
     role: "nurse",

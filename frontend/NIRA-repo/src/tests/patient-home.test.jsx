@@ -120,6 +120,6 @@ test("patient home calendar highlights use the clinic day", () => {
 
   expect(screen.getByRole("heading", { name: /calendar highlights/i, level: 3 })).toBeInTheDocument();
   expect(screen.getByText("1 today")).toBeInTheDocument();
-  expect(screen.getByText(/dr\. nisha mehra/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/dr\. nisha mehra/i).length).toBeGreaterThan(0);
   expect(screen.queryByText(/no appointments today/i)).not.toBeInTheDocument();
 });

@@ -1,4 +1,108 @@
-import { supabase } from "../lib/supabase";
+import { supabase, supabaseConfigured } from "../lib/supabase";
+
+function normalizeDbUserStatus(role) {
+  if (role === "doctor") {
+    return "pending";
+  }
+
+  return "active";
+}
+
+async function createAuthUser({ email, password, fullName, role, phone }) {
+  if (!supabaseConfigured || !email || !password) {
+    return null;
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: fullName,
+        role,
+        phone: phone || null
+      }
+    }
+  });
+
+  if (error) throw error;
+  return data.user || null;
+}
+
+async function createUserProfile(payload) {
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .upsert(payload, { onConflict: "id" })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function syncSignupToDatabase({
+  role,
+  fullName,
+  email,
+  password,
+  phone,
+  specialty,
+  licenseNumber,
+  gender,
+  city,
+  age,
+  abhaNumber,
+  emergencyContactName,
+  emergencyContactPhone,
+  preferredLanguage
+}) {
+  if (!supabaseConfigured) {
+    return { synced: false, skipped: true, reason: "supabase_not_configured" };
+  }
+
+  if (!email || !password) {
+    return { synced: false, skipped: true, reason: "missing_email_or_password" };
+  }
+
+  const user = await createAuthUser({ email, password, fullName, role, phone });
+
+  if (!user?.id) {
+    return { synced: false, skipped: true, reason: "no_auth_user" };
+  }
+
+  await createUserProfile({
+    id: user.id,
+    clinic_id: null,
+    role,
+    full_name: fullName,
+    phone: phone || null,
+    email,
+    specialty: role === "doctor" ? specialty || null : null,
+    license_number: role === "doctor" ? licenseNumber || null : null,
+    gender: gender || null,
+    status: normalizeDbUserStatus(role)
+  });
+
+  if (role === "patient") {
+    const { error } = await supabase.from("patients").insert({
+      user_id: user.id,
+      clinic_id: null,
+      phone: phone || null,
+      email,
+      abha: abhaNumber || null,
+      age: age ? Number(age) : null,
+      gender: gender || null,
+      city: city || null,
+      emergency_contact_name: emergencyContactName || null,
+      emergency_contact_phone: emergencyContactPhone || null,
+      preferred_language: preferredLanguage || "en"
+    });
+
+    if (error) throw error;
+  }
+
+  return { synced: true, skipped: false, userId: user.id };
+}
 
 // ── Encounters ──────────────────────────────────────────────
 
