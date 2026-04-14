@@ -2,20 +2,41 @@ const DEFAULT_GUNA_EMR_BASE_URL = "http://localhost:3001";
 const DEFAULT_CDSS_BASE_URL = "http://localhost:8010";
 const REQUEST_TIMEOUT_MS = 2500;
 
+function canUseLocalhostFallback() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
+
 function getBaseUrl() {
-  return (import.meta.env.VITE_GUNA_EMR_BASE_URL || DEFAULT_GUNA_EMR_BASE_URL).replace(/\/$/, "");
+  const configuredBaseUrl = (import.meta.env.VITE_GUNA_EMR_BASE_URL || "").trim();
+  const baseUrl = configuredBaseUrl || (canUseLocalhostFallback() ? DEFAULT_GUNA_EMR_BASE_URL : "");
+  return baseUrl.replace(/\/$/, "");
 }
 
 function getCdssBaseUrl() {
-  return (import.meta.env.VITE_CDSS_BASE_URL || DEFAULT_CDSS_BASE_URL).replace(/\/$/, "");
+  const configuredBaseUrl = (import.meta.env.VITE_CDSS_BASE_URL || "").trim();
+  const baseUrl = configuredBaseUrl || (canUseLocalhostFallback() ? DEFAULT_CDSS_BASE_URL : "");
+  return baseUrl.replace(/\/$/, "");
+}
+
+function requireConfiguredBaseUrl(baseUrl, serviceName) {
+  if (baseUrl) {
+    return baseUrl;
+  }
+
+  throw new Error(`${serviceName} base URL is not configured for this deployment.`);
 }
 
 async function getJson(path) {
+  const baseUrl = requireConfiguredBaseUrl(getBaseUrl(), "EMR");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${getBaseUrl()}${path}`, {
+    const response = await fetch(`${baseUrl}${path}`, {
       method: "GET",
       headers: {
         Accept: "application/json"
@@ -35,11 +56,12 @@ async function getJson(path) {
 }
 
 async function postJson(path, body) {
+  const baseUrl = requireConfiguredBaseUrl(getBaseUrl(), "EMR");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${getBaseUrl()}${path}`, {
+    const response = await fetch(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -60,11 +82,12 @@ async function postJson(path, body) {
 }
 
 async function postCdssJson(path, body) {
+  const baseUrl = requireConfiguredBaseUrl(getCdssBaseUrl(), "CDSS");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS * 2);
 
   try {
-    const response = await fetch(`${getCdssBaseUrl()}${path}`, {
+    const response = await fetch(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -266,11 +289,12 @@ export async function submitSymptomChatToEmr({
 }
 
 export async function fetchSymptomChatMemory({ contextKey, userId, role, patientPhone }) {
+  const baseUrl = requireConfiguredBaseUrl(getBaseUrl(), "EMR");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const url = new URL(`${getBaseUrl()}/api/convert/symptom-chat/memory`);
+    const url = new URL(`${baseUrl}/api/convert/symptom-chat/memory`);
     if (contextKey) url.searchParams.set("contextKey", contextKey);
     if (userId) url.searchParams.set("userId", userId);
     if (role) url.searchParams.set("role", role);
