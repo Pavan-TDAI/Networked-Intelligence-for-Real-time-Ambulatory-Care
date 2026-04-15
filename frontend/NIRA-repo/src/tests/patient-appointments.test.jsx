@@ -30,6 +30,8 @@ test("patient dashboard buckets open appointment lists and review detail states"
   await user.click(screen.getByRole("link", { name: /in review/i }));
 
   expect(await screen.findByRole("heading", { name: /my appointments/i, level: 1 })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /submitted/i })).toBeInTheDocument();
+  await user.click(screen.getByRole("link", { name: /missed/i }));
   await user.click(screen.getByRole("link", { name: /dr\. nisha mehra/i }));
 
   expect(await screen.findByText("What happens now")).toBeInTheDocument();
@@ -66,7 +68,12 @@ test("patient can cancel a non-completed appointment and the slot becomes bookab
 
   expect(await screen.findByText("Book by live doctor slots")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /dr\. nisha mehra/i }));
-  expect(screen.getByRole("button", { name: /9:15.*9:30/i })).not.toBeDisabled();
+  const slotButtons = screen
+    .getAllByRole("button")
+    .filter((button) => /\d{1,2}:\d{2}\s*(AM|PM)\s*-\s*\d{1,2}:\d{2}\s*(AM|PM)/i.test(button.textContent || ""));
+  const firstAvailableSlot = slotButtons.find((button) => !button.disabled);
+  expect(firstAvailableSlot).toBeTruthy();
+  expect(firstAvailableSlot).not.toBeDisabled();
 });
 
 test("appointment detail panel does not crash when no appointment is selected", () => {

@@ -8,6 +8,7 @@ import {
   syncBookingToGunaEmr,
   syncDoctorApprovalToGunaEmr,
   syncInterviewToGunaEmr,
+  syncNurseVitalsToGunaEmr,
   syncPatientAbhaToGunaEmr
 } from "./gunaEmrBridge";
 import {
@@ -2851,7 +2852,7 @@ export const demoStore = {
 
   async saveNurseVitals(appointmentId, payload) {
     await wait(90);
-    return updateState((state) => {
+    let snapshot = updateState((state) => {
       const appointment = state.appointments.byId[appointmentId];
       if (!appointment) {
         throw new Error("Appointment not found.");
@@ -2894,6 +2895,76 @@ export const demoStore = {
 
       return state;
     });
+
+    try {
+      const appointment = snapshot.appointments.byId[appointmentId];
+      const patient = snapshot.patients.byId[appointment.patientId];
+      const emrSync = getEmrSyncRecord(snapshot, appointmentId);
+      const vitals = snapshot.encounters.byId[`encounter-${appointmentId}`]?.apciDraft?.vitals || {};
+
+      const emrResponse = await syncNurseVitalsToGunaEmr({
+        appointment,
+        patient,
+        vitals,
+        emrSync
+      });
+
+      snapshot = updateState((state) => {
+        const existing = state.emrSync.byId[`emr-${appointmentId}`] || {
+          id: `emr-${appointmentId}`,
+          appointmentId,
+          localPatientId: patient.id,
+          localDoctorId: appointment.doctorId,
+          patientId: null,
+          encounterId: null,
+          queueToken: null,
+          bookingSyncedAt: null,
+          interviewSyncedAt: null,
+          approvalSyncedAt: null,
+          vitalsSyncedAt: null,
+          lastError: null
+        };
+
+        upsertEmrSyncEntity(state, {
+          ...existing,
+          patientId: emrResponse?.patientId || existing.patientId,
+          encounterId: emrResponse?.encounterId || existing.encounterId,
+          vitalsSyncedAt: new Date().toISOString(),
+          lastError: null
+        });
+
+        return state;
+      });
+    } catch (error) {
+      console.warn("[NIRA] Nurse vitals saved locally; EMR vitals sync skipped.", error);
+
+      snapshot = updateState((state) => {
+        const appointment = state.appointments.byId[appointmentId];
+        const existing = state.emrSync.byId[`emr-${appointmentId}`] || {
+          id: `emr-${appointmentId}`,
+          appointmentId,
+          localPatientId: appointment?.patientId || null,
+          localDoctorId: appointment?.doctorId || null,
+          patientId: null,
+          encounterId: null,
+          queueToken: null,
+          bookingSyncedAt: null,
+          interviewSyncedAt: null,
+          approvalSyncedAt: null,
+          vitalsSyncedAt: null,
+          lastError: null
+        };
+
+        upsertEmrSyncEntity(state, {
+          ...existing,
+          lastError: String(error?.message || error)
+        });
+
+        return state;
+      });
+    }
+
+    return snapshot;
   },
 
   async approveEncounter(appointmentId, payload) {

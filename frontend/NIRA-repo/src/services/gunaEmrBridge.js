@@ -343,6 +343,24 @@ export async function syncInterviewToGunaEmr({ appointment, patient, doctor, ans
   return postJson("/api/convert/symptoms", payload);
 }
 
+export async function syncNurseVitalsToGunaEmr({ appointment, patient, vitals, emrSync }) {
+  const bp = extractBloodPressure(vitals?.bloodPressure);
+
+  const payload = {
+    appointmentId: appointment.id,
+    encounterId: pickEncounterId(appointment, emrSync),
+    patientId: pickPatientId(patient, emrSync),
+    systolic: bp.systolic,
+    diastolic: bp.diastolic,
+    heartRate: parseNumber(vitals?.pulse),
+    temperature: parseNumber(vitals?.temperature),
+    spo2: parseNumber(vitals?.spo2),
+    painScore: parseNumber(vitals?.painScore)
+  };
+
+  return postJson("/api/convert/vitals", payload);
+}
+
 export async function syncDoctorApprovalToGunaEmr({ appointment, patient, doctor, draft, note, followUpNote, emrSync }) {
   const notesText = [
     `Chief complaint: ${draft?.soap?.chiefComplaint || "N/A"}`,

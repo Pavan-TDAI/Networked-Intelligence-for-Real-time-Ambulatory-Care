@@ -143,10 +143,6 @@ function isMissedPatientAppointment(appointment, encounter, doctor, reference = 
     return false;
   }
 
-  if (!["scheduled", "rescheduled"].includes(appointment.bookingStatus)) {
-    return false;
-  }
-
   if (encounter?.status === "approved") {
     return false;
   }

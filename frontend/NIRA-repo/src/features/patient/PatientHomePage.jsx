@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
@@ -36,9 +36,7 @@ export function PatientHomePage() {
     bucketCounts,
     prescriptions,
     testOrders,
-    unreadNotificationCount,
-    nextAppointment,
-    pendingPrecheckQuestionnaire
+    unreadNotificationCount
   } = getPatientWorkspace(state);
   const today = getTodayDayKey();
   const todayAppointments = useMemo(
@@ -144,16 +142,58 @@ export function PatientHomePage() {
   );
 
   const hasRecentVitals = vitalsCards.some((item) => item.live);
-  const showPrecheck = nextAppointment && !["completed", "cancelled"].includes(nextAppointment.journeyBucket);
+  const precheckEligibleAppointments = useMemo(
+    () =>
+      appointments
+        .filter(
+          (item) =>
+            !["cancelled", "completed"].includes(item.bookingStatus) &&
+            item.journeyBucket !== "missed"
+        )
+        .sort((left, right) => new Date(left.startAt || 0) - new Date(right.startAt || 0)),
+    [appointments]
+  );
+
+  const [selectedPrecheckAppointmentId, setSelectedPrecheckAppointmentId] = useState(
+    () => precheckEligibleAppointments[0]?.id || ""
+  );
+
+  useEffect(() => {
+    if (!precheckEligibleAppointments.length) {
+      if (selectedPrecheckAppointmentId) {
+        setSelectedPrecheckAppointmentId("");
+      }
+      return;
+    }
+
+    if (precheckEligibleAppointments.some((item) => item.id === selectedPrecheckAppointmentId)) {
+      return;
+    }
+
+    setSelectedPrecheckAppointmentId(precheckEligibleAppointments[0].id);
+  }, [precheckEligibleAppointments, selectedPrecheckAppointmentId]);
+
+  const selectedPrecheckAppointment =
+    precheckEligibleAppointments.find((item) => item.id === selectedPrecheckAppointmentId) ||
+    precheckEligibleAppointments[0] ||
+    null;
+  const showPrecheck = Boolean(selectedPrecheckAppointment);
+  const selectedPrecheckHasDoctorQuestions =
+    selectedPrecheckAppointment?.precheckQuestionnaire?.status === "sent_to_patient";
+  const hasMultiplePrecheckAppointments = precheckEligibleAppointments.length > 1;
 
   function openPrecheckChat() {
+    if (!selectedPrecheckAppointment) {
+      return;
+    }
+
     window.dispatchEvent(new CustomEvent("nira:open-precheck", {
       detail: {
-        appointmentId: nextAppointment?.id,
-        doctorName: nextAppointment?.doctor?.fullName,
-        specialty: nextAppointment?.doctor?.specialty,
-        startAt: nextAppointment?.startAt,
-        hasDoctorQuestions: pendingPrecheckQuestionnaire?.status === "sent_to_patient"
+        appointmentId: selectedPrecheckAppointment.id,
+        doctorName: selectedPrecheckAppointment.doctor?.fullName,
+        specialty: selectedPrecheckAppointment.doctor?.specialty,
+        startAt: selectedPrecheckAppointment.startAt,
+        hasDoctorQuestions: selectedPrecheckHasDoctorQuestions
       }
     }));
   }
@@ -213,14 +253,34 @@ export function PatientHomePage() {
                     <h3 className="mt-1 text-lg font-semibold text-ink">Prepare for your visit</h3>
                     <p className="mt-1.5 text-sm leading-relaxed text-muted">
                       Answer a few quick questions before your appointment with{" "}
-                      <span className="font-semibold text-ink">{nextAppointment.doctor?.fullName || "your doctor"}</span>
-                      {nextAppointment.startAt && (
-                        <> on <span className="font-semibold text-ink">{formatDate(nextAppointment.startAt)}</span> at <span className="font-semibold text-ink">{formatTime(nextAppointment.startAt)}</span></>
+                      <span className="font-semibold text-ink">{selectedPrecheckAppointment?.doctor?.fullName || "your doctor"}</span>
+                      {selectedPrecheckAppointment?.startAt && (
+                        <> on <span className="font-semibold text-ink">{formatDate(selectedPrecheckAppointment.startAt)}</span> at <span className="font-semibold text-ink">{formatTime(selectedPrecheckAppointment.startAt)}</span></>
                       )}
                       . This helps your doctor review your case beforehand.
                     </p>
                   </div>
                 </div>
+
+                {hasMultiplePrecheckAppointments && (
+                  <div className="mt-4 rounded-xl border border-line bg-white/75 p-3">
+                    <label htmlFor="precheck-appointment-select" className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-tide">
+                      Choose appointment for pre-check
+                    </label>
+                    <select
+                      id="precheck-appointment-select"
+                      value={selectedPrecheckAppointmentId}
+                      onChange={(event) => setSelectedPrecheckAppointmentId(event.target.value)}
+                      className="mt-2 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-brand-sky focus:ring-2 focus:ring-brand-sky/20"
+                    >
+                      {precheckEligibleAppointments.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {formatDate(item.startAt)} at {formatTime(item.startAt)} - {item.doctor?.fullName || "Doctor"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="mt-5 flex flex-wrap items-center gap-3">
                   <button
@@ -235,10 +295,10 @@ export function PatientHomePage() {
                   <span className="text-xs text-muted">Takes ~2 minutes</span>
                 </div>
 
-                {pendingPrecheckQuestionnaire?.status === "sent_to_patient" && (
+                {selectedPrecheckHasDoctorQuestions && (
                   <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
                     <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                    <span className="text-xs font-medium text-amber-800">Your doctor has sent pre-check questions</span>
+                    <span className="text-xs font-medium text-amber-800">Doctor questions are ready for this appointment</span>
                   </div>
                 )}
               </div>
